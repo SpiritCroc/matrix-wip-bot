@@ -1,0 +1,23 @@
+pub const TEXT_SPAM: &'static [&str] = &[
+    "Spam",
+    "Spam",
+    "Spam",
+    "Lovely Spam!",
+    "Wonderful Spam!",
+    "Lovely Spam!",
+    "Spam",
+    "Spam",
+    "Spam",
+    "Magnificent Spam!",
+    "Superlative Spam!",
+    "Spam",
+    "Spam",
+    "Spam",
+    "Wonderous Spam!",
+    "Surgical Spam!",
+    "Splendiferous Spam!",
+    "Spam",
+    "Spam",
+    "Spam",
+    "Spaaam!"
+];
