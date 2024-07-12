@@ -5,12 +5,16 @@ use matrix_sdk::{
     matrix_auth::MatrixSession,
     Client, Room, RoomState,
     ruma::events::room::message::{
-        MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
+        MessageType, OriginalSyncRoomMessageEvent,
     },
     ruma::events::room::member::StrippedRoomMemberEvent,
+    RoomMemberships,
 };
 use tokio::fs;
 use tokio::time::{sleep, Duration};
+
+mod command;
+use crate::command::handle_command;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -112,13 +116,19 @@ async fn handle_message(event: OriginalSyncRoomMessageEvent, room: Room) {
     if event.sender == room.own_user_id() {
         return;
     }
-    let MessageType::Text(text_content) = event.content.msgtype else {
+    let MessageType::Text(text_content) = event.clone().content.msgtype else {
         return;
     };
 
-    if text_content.body.starts_with("!ping") {
-        println!("Got !ping in {}", room.room_id());
-        let content = RoomMessageEventContent::text_plain("I'm here");
-        room.send(content).await.unwrap();
+    let mut split_body = text_content.body.split_whitespace();
+    let cmd = split_body.next().unwrap_or_default().to_ascii_lowercase();
+
+    // Commands start with '!'
+    if cmd.starts_with('!') {
+        let cmd = &cmd[1..].to_string();
+        handle_command(cmd, split_body, event, room).await;
+    } else if room.members(RoomMemberships::JOIN).await.unwrap_or_default().len() == 2 {
+        // Don't require '!' prefix in DMs
+        handle_command(&cmd, split_body, event, room).await;
     }
 }
