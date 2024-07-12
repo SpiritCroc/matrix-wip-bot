@@ -7,8 +7,10 @@ use matrix_sdk::{
     ruma::events::room::message::{
         MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
     },
+    ruma::events::room::member::StrippedRoomMemberEvent,
 };
 use tokio::fs;
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -56,7 +58,8 @@ async fn main() -> anyhow::Result<()> {
         fs::write(session_path, serialized_session).await?;
     }
 
-    // TODO: already observe invites for initial sync
+    // This one is possibly also for old state events handled before
+    client.add_event_handler(handle_invites);
 
     // Sync once without message handler to not deal with old messages
     client.sync_once(SyncSettings::default()).await?;
@@ -67,10 +70,39 @@ async fn main() -> anyhow::Result<()> {
     // Client will re-use the previously stored sync token automatically
     client.sync(SyncSettings::default()).await?;
 
-    //println!("Logging out...");
-    //let response = client.matrix_auth().logout().await?;
-
     Ok(())
+}
+
+// From https://github.com/matrix-org/matrix-rust-sdk/blob/main/examples/autojoin/src/main.rs
+async fn handle_invites(
+    room_member: StrippedRoomMemberEvent,
+    client: Client,
+    room: Room,
+) {
+    if room_member.state_key != client.user_id().unwrap() {
+        return;
+    }
+
+    tokio::spawn(async move {
+        println!("Autojoining room {} by invitation from {}", room.room_id(), room_member.sender);
+        let mut delay = 2;
+
+        while let Err(err) = room.join().await {
+            // retry autojoin due to synapse sending invites, before the
+            // invited user can join for more information see
+            // https://github.com/matrix-org/synapse/issues/4345
+            eprintln!("Failed to join room {} ({err:?}), retrying in {delay}s", room.room_id());
+
+            sleep(Duration::from_secs(delay)).await;
+            delay *= 2;
+
+            if delay > 3600 {
+                eprintln!("Can't join room {} ({err:?})", room.room_id());
+                break;
+            }
+        }
+        println!("Successfully joined room {}", room.room_id());
+    });
 }
 
 async fn handle_message(event: OriginalSyncRoomMessageEvent, room: Room) {
