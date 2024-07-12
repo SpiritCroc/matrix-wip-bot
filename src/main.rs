@@ -2,6 +2,7 @@ use config::Config;
 use url::Url;
 use matrix_sdk::{
     config::SyncSettings,
+    event_handler::Ctx,
     matrix_auth::MatrixSession,
     Client, Room, RoomState,
     ruma::events::room::message::{
@@ -14,6 +15,7 @@ use tokio::fs;
 use tokio::time::{sleep, Duration};
 
 mod command;
+mod users;
 use crate::command::handle_command;
 
 #[tokio::main]
@@ -23,10 +25,10 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    let hs = config.get::<String>("matrix.homeserver_url").expect("Homeserver url missing in config");
+    let hs = config.get::<String>("login.homeserver_url").expect("Homeserver url missing in config");
     let hs_url = Url::parse(&hs).expect("Invalid homeserver url");
-    let username = config.get::<String>("matrix.username").expect("Username missing in config");
-    let password = config.get::<String>("matrix.password").expect("Password missing in config");
+    let username = config.get::<String>("login.username").expect("Username missing in config");
+    let password = config.get::<String>("login.password").expect("Password missing in config");
 
     let data_dir = dirs::data_dir().expect("no data_dir directory found").join("matrix-wip-bot");
     let db_path = data_dir.join("db");
@@ -61,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
         let serialized_session = serde_json::to_string(&user_session)?;
         fs::write(session_path, serialized_session).await?;
     }
+
+    client.add_event_handler_context(config.clone());
 
     // This one is possibly also for old state events handled before
     client.add_event_handler(handle_invites);
@@ -109,7 +113,7 @@ async fn handle_invites(
     });
 }
 
-async fn handle_message(event: OriginalSyncRoomMessageEvent, room: Room) {
+async fn handle_message(event: OriginalSyncRoomMessageEvent, room: Room, config: Ctx<Config>) {
     if room.state() != RoomState::Joined {
         return;
     }
@@ -126,9 +130,9 @@ async fn handle_message(event: OriginalSyncRoomMessageEvent, room: Room) {
     // Commands start with '!'
     if cmd.starts_with('!') {
         let cmd = &cmd[1..].to_string();
-        handle_command(cmd, split_body, event, room).await;
+        handle_command(cmd, split_body, event, room, config.0).await;
     } else if room.members(RoomMemberships::JOIN).await.unwrap_or_default().len() == 2 {
         // Don't require '!' prefix in DMs
-        handle_command(&cmd, split_body, event, room).await;
+        handle_command(&cmd, split_body, event, room, config.0).await;
     }
 }
