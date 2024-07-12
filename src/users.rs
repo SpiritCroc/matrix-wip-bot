@@ -30,6 +30,10 @@ pub fn is_user_vip(mxid: &OwnedUserId, config: Config) -> bool {
     is_user_matched_with_config(mxid, config, "users.vip")
 }
 
-pub fn is_user_trusted(mxid: &OwnedUserId, config: Config) -> bool {
+pub fn is_user_trusted_not_vip(mxid: &OwnedUserId, config: Config) -> bool {
     is_user_matched_with_config(mxid, config, "users.trusted")
+}
+
+pub fn is_user_trusted(mxid: &OwnedUserId, config: Config) -> bool {
+    is_user_trusted_not_vip(mxid, config.clone()) || is_user_vip(mxid, config)
 }

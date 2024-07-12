@@ -1,0 +1,12 @@
+login:
+  homeserver_url: "https://matrix.example.com"
+  username: "@wipbot:example.com"
+  password: "REDACTED"
+users:
+  # Much spam allowed
+  vip:
+    - "@admin:example.com"
+  # A bit of spam allowed, invites allowed
+  trusted:
+    - "example.com"
+    - "@trusted:sth.example.com"

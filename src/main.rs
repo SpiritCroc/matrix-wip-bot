@@ -17,6 +17,7 @@ use tokio::time::{sleep, Duration};
 mod command;
 mod users;
 use crate::command::handle_command;
+use crate::users::is_user_trusted;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,16 +84,21 @@ async fn main() -> anyhow::Result<()> {
 
 // From https://github.com/matrix-org/matrix-rust-sdk/blob/main/examples/autojoin/src/main.rs
 async fn handle_invites(
-    room_member: StrippedRoomMemberEvent,
+    event: StrippedRoomMemberEvent,
     client: Client,
     room: Room,
+    config: Ctx<Config>
 ) {
-    if room_member.state_key != client.user_id().unwrap() {
+    if event.state_key != client.user_id().unwrap() {
+        return;
+    }
+    if !is_user_trusted(&event.sender, config.0) {
+        println!("Not auto-joining room {} by untrusted invitation from {}", room.room_id(), event.sender);
         return;
     }
 
     tokio::spawn(async move {
-        println!("Autojoining room {} by invitation from {}", room.room_id(), room_member.sender);
+        println!("Autojoining room {} by invitation from {}", room.room_id(), event.sender);
         let mut delay = 2;
 
         while let Err(err) = room.join().await {
@@ -113,7 +119,11 @@ async fn handle_invites(
     });
 }
 
-async fn handle_message(event: OriginalSyncRoomMessageEvent, room: Room, config: Ctx<Config>) {
+async fn handle_message(
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    config: Ctx<Config>
+) {
     if room.state() != RoomState::Joined {
         return;
     }
