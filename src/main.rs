@@ -71,13 +71,12 @@ async fn main() -> anyhow::Result<()> {
     client.add_event_handler(handle_invites);
 
     // Sync once without message handler to not deal with old messages
-    client.sync_once(SyncSettings::default()).await?;
-    println!("Initial sync finished, start listening for events");
+    let sync_response = client.sync_once(SyncSettings::default()).await.unwrap();
+    println!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
 
+    // Actual message handling and sync loop
     client.add_event_handler(handle_message);
-
-    // Client will re-use the previously stored sync token automatically
-    client.sync(SyncSettings::default()).await?;
+    client.sync(SyncSettings::default().token(sync_response.next_batch)).await?;
 
     Ok(())
 }
