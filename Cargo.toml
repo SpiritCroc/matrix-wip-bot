@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+config = "0.14.0"
+matrix-sdk = "0.7.1"
+tokio = { version = "1.38.0", features = ["rt-multi-thread"] }
+url = "2.5.2"
