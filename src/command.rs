@@ -1,4 +1,7 @@
-use std::{self, cmp, str::SplitWhitespace};
+use std::{
+    self, cmp, str::SplitWhitespace,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use config::Config;
 use matrix_sdk::{
     Room,
@@ -20,16 +23,19 @@ pub async fn handle_command(
     config: Config,
 ) {
     match cmd.as_str() {
-        "ping" => handle_ping(room).await,
+        "ping" => handle_ping(event, room).await,
         "spam" => handle_spam(args, event, room, config).await,
         "whoami" => handle_whoami(event, room, config).await,
         _ => println!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
 }
 
-async fn handle_ping(room: Room) {
+async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
     println!("Got !ping in {}", room.room_id());
-    let content = RoomMessageEventContent::text_plain("I'm here");
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let duration = now - u128::from(event.origin_server_ts.0);
+    let msg = format!("I'm here (ping took {duration} ms to arrive)");
+    let content = RoomMessageEventContent::text_plain(msg);
     if let Err(e) = room.send(content).await {
         println!("Failed to ping in {}: {}", room.room_id(), e);
     }
