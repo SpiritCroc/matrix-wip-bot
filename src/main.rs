@@ -52,10 +52,12 @@ async fn main() -> anyhow::Result<()> {
     } else {
         println!("Doing a fresh login...");
 
+        let device_name = config.get::<String>("login.device_name").unwrap_or(String::from("wip-bot"));
+
         let matrix_auth = client.matrix_auth();
         let login_response = matrix_auth
             .login_username(&username, &password)
-            .initial_device_display_name("wip-bot")
+            .initial_device_display_name(&device_name)
             .await?;
 
         println!("Logged in as {}", login_response.device_id);
