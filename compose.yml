@@ -1,0 +1,9 @@
+version: "3.3"
+
+services:
+  bot:
+    image: localhost/matrix-wip-bot
+    restart: always
+    volumes:
+      - ./config.yaml:/usr/src/matrix-wip-bot/config.yaml:ro
+      - ./data:/root/.local/share/matrix-wip-bot

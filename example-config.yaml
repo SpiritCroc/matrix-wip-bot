@@ -2,6 +2,7 @@ login:
   homeserver_url: "https://matrix.example.com"
   username: "@wipbot:example.com"
   password: "REDACTED"
+  device_name: "wip-bot"
 users:
   # Much spam allowed
   vip:
