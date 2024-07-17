@@ -135,15 +135,30 @@ async fn handle_message(
         return;
     };
 
+    let allowed_pings = config.get::<String>("bot.plaintext_ping").map(|name|
+        vec![
+            name.clone(),
+            format!("{name}:")
+        ]
+    ).unwrap_or_default();
+
     let mut split_body = text_content.body.split_whitespace();
     let cmd = split_body.next().unwrap_or_default().to_ascii_lowercase();
 
-    // Commands start with '!'
+    let is_mention = allowed_pings.iter().any(|ping| ping.to_ascii_lowercase() == cmd);
+
+    let cmd = if is_mention {
+        split_body.next().unwrap_or_default().to_ascii_lowercase()
+    } else {
+        cmd
+    };
+
+    // Commands start with '!', or is a mention,
+    // or was sent in a DM.
     if cmd.starts_with('!') {
         let cmd = &cmd[1..].to_string();
         handle_command(cmd, split_body, event, room, config.0).await;
-    } else if room.members(RoomMemberships::JOIN).await.unwrap_or_default().len() == 2 {
-        // Don't require '!' prefix in DMs
+    } else if is_mention || room.members(RoomMemberships::JOIN).await.unwrap_or_default().len() == 2 {
         handle_command(&cmd, split_body, event, room, config.0).await;
     }
 }
