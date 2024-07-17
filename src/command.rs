@@ -22,6 +22,12 @@ use crate::users::{is_user_vip, is_user_trusted, is_user_trusted_not_vip};
 mod spam;
 use spam::{TEXT_SPAM, STICKER_SPAM};
 
+const HELP: &str = "- !help\n\
+                    - !ping\n\
+                    - !whoami";
+const TRUSTED_HELP: &str = "- !spam [count]\n\
+                            - !stickerspam [count]";
+
 pub async fn handle_command(
     cmd: &String,
     args: SplitWhitespace<'_>,
@@ -30,6 +36,7 @@ pub async fn handle_command(
     config: Config,
 ) {
     match cmd.as_str() {
+        "help" => handle_help(event, room, config).await,
         "ping" => handle_ping(event, room).await,
         "spam" => handle_spam(args, event, room, config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, config).await,
@@ -38,8 +45,22 @@ pub async fn handle_command(
     }
 }
 
+async fn handle_help(event: OriginalSyncRoomMessageEvent, room: Room, config: Config) {
+    let trusted = is_user_trusted(&event.sender, config.clone());
+    println!("Got !help in {} from {}, trusted={trusted}", room.room_id(), event.sender);
+    let msg = if trusted {
+        format!("{}\n{}", HELP, TRUSTED_HELP)
+    } else {
+        HELP.to_string()
+    };
+    let content = RoomMessageEventContent::text_plain(msg);
+    if let Err(e) = room.send(content).await {
+        println!("Failed to help in {}: {}", room.room_id(), e);
+    }
+}
+
 async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
-    println!("Got !ping in {}", room.room_id());
+    println!("Got !ping in {} from {}", room.room_id(), event.sender);
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
     let duration = now - u128::from(event.origin_server_ts.0);
     let msg = format!("I'm here (ping took {duration} ms to arrive)");
