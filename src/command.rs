@@ -5,15 +5,22 @@ use std::{
 use config::Config;
 use matrix_sdk::{
     Room,
-    ruma::events::room::message::{
-        RoomMessageEventContent, OriginalSyncRoomMessageEvent,
+    ruma::events::{
+        room::{
+            message::{
+                OriginalSyncRoomMessageEvent,
+                RoomMessageEventContent,
+            },
+            ImageInfo,
+        },
+        sticker::StickerEventContent,
     },
 };
 
 use crate::users::{is_user_vip, is_user_trusted, is_user_trusted_not_vip};
 
 mod spam;
-use spam::TEXT_SPAM;
+use spam::{TEXT_SPAM, STICKER_SPAM};
 
 pub async fn handle_command(
     cmd: &String,
@@ -25,6 +32,7 @@ pub async fn handle_command(
     match cmd.as_str() {
         "ping" => handle_ping(event, room).await,
         "spam" => handle_spam(args, event, room, config).await,
+        "stickerspam" => handle_sticker_spam(args, event, room, config).await,
         "whoami" => handle_whoami(event, room, config).await,
         _ => println!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
@@ -72,6 +80,43 @@ async fn handle_spam(
         if let Err(e) = room.send(content).await {
             println!("Failed to spam in {}: {}", room.room_id(), e);
         }
+    }
+}
+
+async fn handle_sticker_spam(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    config: Config
+) {
+    let vip = is_user_vip(&event.sender, config.clone());
+    let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
+    println!("Got !stickerspam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    let max_spam_count = if vip {
+        500
+    } else if trusted {
+        100
+    } else {
+        1
+    };
+    let desired_count = args.next().unwrap_or_default().parse::<usize>();
+    let count = cmp::min(desired_count.unwrap_or(STICKER_SPAM.len()), max_spam_count);
+    for i in 0..count {
+        let spam_select = STICKER_SPAM[i % STICKER_SPAM.len()];
+        let text_spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
+        let content = StickerEventContent::new(
+            text_spam_select.to_string(), // body
+            ImageInfo::new(),
+            spam_select.into(), // mxc
+        );
+        if let Err(e) = room.send(content).await {
+            println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+            return
+        }
+    }
+    let content = RoomMessageEventContent::notice_plain("Done!"); // TODO notice
+    if let Err(e) = room.send(content).await {
+        println!("Failed to stickerspam in {}: {}", room.room_id(), e);
     }
 }
 
