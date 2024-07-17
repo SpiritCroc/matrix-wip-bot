@@ -11,6 +11,7 @@ use matrix_sdk::{
     ruma::events::room::member::StrippedRoomMemberEvent,
     RoomMemberships,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
 use tokio::time::{sleep, Duration};
 
@@ -18,6 +19,23 @@ mod command;
 mod users;
 use crate::command::handle_command;
 use crate::users::is_user_trusted;
+
+// Things we want to pass to message/event handlers
+struct WipContext {
+    config: Config,
+    allowed_pings: Vec<String>,
+    launched_ts: u128,
+}
+
+impl Clone for WipContext {
+    fn clone(&self) -> Self{
+        WipContext {
+            config: self.config.clone(),
+            allowed_pings: self.allowed_pings.clone(),
+            launched_ts: self.launched_ts.clone(),
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -34,6 +52,22 @@ async fn main() -> anyhow::Result<()> {
     let data_dir = dirs::data_dir().expect("no data_dir directory found").join("matrix-wip-bot");
     let db_path = data_dir.join("db");
     let session_path = data_dir.join("session");
+
+    let allowed_pings = config.get::<String>("bot.plaintext_ping").map(|name|
+        vec![
+            name.clone(),
+            format!("{name}:")
+        ]
+    ).unwrap_or_default();
+
+    let wip_context = WipContext {
+        config: config.clone(),
+        allowed_pings,
+        launched_ts: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    };
 
     println!("Data dir configured at {}", data_dir.to_str().unwrap_or_default());
     println!("Logging into {hs_url} as {username}...");
@@ -67,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
         fs::write(session_path, serialized_session).await?;
     }
 
-    client.add_event_handler_context(config.clone());
+    client.add_event_handler_context(wip_context);
 
     // This one is possibly also for old state events handled before
     client.add_event_handler(handle_invites);
@@ -88,12 +122,12 @@ async fn handle_invites(
     event: StrippedRoomMemberEvent,
     client: Client,
     room: Room,
-    config: Ctx<Config>
+    wip_context: Ctx<WipContext>
 ) {
     if event.state_key != client.user_id().unwrap() {
         return;
     }
-    if !is_user_trusted(&event.sender, config.0) {
+    if !is_user_trusted(&event.sender, wip_context.0.config) {
         println!("Not auto-joining room {} by untrusted invitation from {}", room.room_id(), event.sender);
         return;
     }
@@ -123,7 +157,7 @@ async fn handle_invites(
 async fn handle_message(
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    config: Ctx<Config>
+    wip_context: Ctx<WipContext>
 ) {
     if room.state() != RoomState::Joined {
         return;
@@ -135,17 +169,15 @@ async fn handle_message(
         return;
     };
 
-    let allowed_pings = config.get::<String>("bot.plaintext_ping").map(|name|
-        vec![
-            name.clone(),
-            format!("{name}:")
-        ]
-    ).unwrap_or_default();
+    if u128::from(event.origin_server_ts.0) < wip_context.0.launched_ts - 10_000 {
+        println!("Ignore message in the past: {} in {}", event.event_id, room.room_id());
+        return
+    }
 
     let mut split_body = text_content.body.split_whitespace();
     let cmd = split_body.next().unwrap_or_default().to_ascii_lowercase();
 
-    let is_mention = allowed_pings.iter().any(|ping| ping.to_ascii_lowercase() == cmd);
+    let is_mention = wip_context.0.allowed_pings.iter().any(|ping| ping.to_ascii_lowercase() == cmd);
 
     let cmd = if is_mention {
         split_body.next().unwrap_or_default().to_ascii_lowercase()
@@ -157,8 +189,8 @@ async fn handle_message(
     // or was sent in a DM.
     if cmd.starts_with('!') {
         let cmd = &cmd[1..].to_string();
-        handle_command(cmd, split_body, event, room, config.0).await;
+        handle_command(cmd, split_body, event, room, wip_context.0.config).await;
     } else if is_mention || room.members(RoomMemberships::JOIN).await.unwrap_or_default().len() == 2 {
-        handle_command(&cmd, split_body, event, room, config.0).await;
+        handle_command(&cmd, split_body, event, room, wip_context.0.config).await;
     }
 }
