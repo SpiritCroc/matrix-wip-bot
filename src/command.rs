@@ -79,7 +79,12 @@ async fn handle_spam(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     println!("Got !spam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if vip {
+    let max_spam_count = if room.is_public() {
+        // No spam in public rooms please...
+        // But showing a single spam sticker wouldn't hurt?
+        handle_sticker_spam(args, event, room, config).await;
+        return;
+    } else if vip {
         500
     } else if trusted {
         100
@@ -113,7 +118,9 @@ async fn handle_sticker_spam(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     println!("Got !stickerspam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if vip {
+    let max_spam_count = if room.is_public() {
+        1
+    } else if vip {
         500
     } else if trusted {
         100
@@ -135,9 +142,11 @@ async fn handle_sticker_spam(
             return
         }
     }
-    let content = RoomMessageEventContent::notice_plain("Done!"); // TODO notice
-    if let Err(e) = room.send(content).await {
-        println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+    if count > STICKER_SPAM.len() {
+        let content = RoomMessageEventContent::notice_plain("Done!");
+        if let Err(e) = room.send(content).await {
+            println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+        }
     }
 }
 
