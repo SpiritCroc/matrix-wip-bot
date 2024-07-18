@@ -24,7 +24,9 @@ use spam::{TEXT_SPAM, STICKER_SPAM};
 
 const HELP: &str = "- !help\n\
                     - !ping\n\
-                    - !whoami";
+                    - !whoami\n\
+                    - !sticker [mxc [body]]\n\
+                    - !broken-sticker";
 const TRUSTED_HELP: &str = "- !spam [count]\n\
                             - !stickerspam [count]";
 
@@ -40,6 +42,8 @@ pub async fn handle_command(
         "ping" => handle_ping(event, room).await,
         "spam" => handle_spam(args, event, room, config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, config).await,
+        "sticker" => handle_sticker(args, event, room).await,
+        "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, config).await,
         _ => println!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
@@ -147,6 +151,41 @@ async fn handle_sticker_spam(
         if let Err(e) = room.send(content).await {
             println!("Failed to stickerspam in {}: {}", room.room_id(), e);
         }
+    }
+}
+
+async fn handle_sticker(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+) {
+    println!("Got !sticker in {} from {}", room.room_id(), event.sender);
+    let mxc = args.next().unwrap_or("mxc://spiritcroc.de/mkJFKqrNzBGBcILPTIPlTPOV");
+    let body = args.next().unwrap_or("Sticker");
+    let content = StickerEventContent::new(
+        body.to_string(),
+        ImageInfo::new(),
+        mxc.into(),
+    );
+    if let Err(e) = room.send(content).await {
+        println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+        return
+    }
+}
+
+async fn handle_sticker_broken(
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+) {
+    println!("Got !broken-sticker in {} from {}", room.room_id(), event.sender);
+    let content = StickerEventContent::new(
+        "Broken sticker".to_string(),
+        ImageInfo::new(),
+        "".into(), // mxc
+    );
+    if let Err(e) = room.send(content).await {
+        println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+        return
     }
 }
 
