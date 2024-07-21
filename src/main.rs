@@ -1,4 +1,5 @@
 use config::Config;
+use log::{debug, info, warn};
 use url::Url;
 use matrix_sdk::{
     config::SyncSettings,
@@ -39,6 +40,7 @@ impl Clone for WipContext {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     let config = Config::builder()
         .add_source(config::File::with_name("config.yaml"))
         .build()
@@ -69,8 +71,8 @@ async fn main() -> anyhow::Result<()> {
             .as_millis()
     };
 
-    println!("Data dir configured at {}", data_dir.to_str().unwrap_or_default());
-    println!("Logging into {hs_url} as {username}...");
+    debug!("Data dir configured at {}", data_dir.to_str().unwrap_or_default());
+    debug!("Logging into {hs_url} as {username}...");
 
     let client = Client::builder()
         .homeserver_url(&hs_url)
@@ -79,12 +81,12 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     if session_path.exists() {
-        println!("Restoring old login...");
+        info!("Restoring old login...");
         let serialized_session = fs::read_to_string(session_path).await?;
         let user_session: MatrixSession = serde_json::from_str(&serialized_session)?;
         client.restore_session(user_session).await?;
     } else {
-        println!("Doing a fresh login...");
+        info!("Doing a fresh login...");
 
         let device_name = config.get::<String>("login.device_name").unwrap_or(String::from("wip-bot"));
 
@@ -94,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
             .initial_device_display_name(&device_name)
             .await?;
 
-        println!("Logged in as {}", login_response.device_id);
+        info!("Logged in as {}", login_response.device_id);
 
         let user_session = matrix_auth.session().expect("A logged-in client should have a session");
         let serialized_session = serde_json::to_string(&user_session)?;
@@ -108,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Sync once without message handler to not deal with old messages
     let sync_response = client.sync_once(SyncSettings::default()).await.unwrap();
-    println!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
+    info!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
 
     // Actual message handling and sync loop
     client.add_event_handler(handle_message);
@@ -128,29 +130,29 @@ async fn handle_invites(
         return;
     }
     if !is_user_trusted(&event.sender, wip_context.0.config) {
-        println!("Not auto-joining room {} by untrusted invitation from {}", room.room_id(), event.sender);
+        info!("Not auto-joining room {} by untrusted invitation from {}", room.room_id(), event.sender);
         return;
     }
 
     tokio::spawn(async move {
-        println!("Autojoining room {} by invitation from {}", room.room_id(), event.sender);
+        info!("Autojoining room {} by invitation from {}", room.room_id(), event.sender);
         let mut delay = 2;
 
         while let Err(err) = room.join().await {
             // retry autojoin due to synapse sending invites, before the
             // invited user can join for more information see
             // https://github.com/matrix-org/synapse/issues/4345
-            eprintln!("Failed to join room {} ({err:?}), retrying in {delay}s", room.room_id());
+            warn!("Failed to join room {} ({err:?}), retrying in {delay}s", room.room_id());
 
             sleep(Duration::from_secs(delay)).await;
             delay *= 2;
 
             if delay > 3600 {
-                eprintln!("Can't join room {} ({err:?})", room.room_id());
+                warn!("Can't join room {} ({err:?})", room.room_id());
                 break;
             }
         }
-        println!("Successfully joined room {}", room.room_id());
+        info!("Successfully joined room {}", room.room_id());
     });
 }
 
@@ -170,7 +172,7 @@ async fn handle_message(
     };
 
     if u128::from(event.origin_server_ts.0) < wip_context.0.launched_ts - 10_000 {
-        println!("Ignore message in the past: {} in {}", event.event_id, room.room_id());
+        info!("Ignore message in the past: {} in {}", event.event_id, room.room_id());
         return
     }
 

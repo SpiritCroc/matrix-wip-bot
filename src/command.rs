@@ -3,6 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use config::Config;
+use log::{debug, warn};
 use matrix_sdk::{
     Room,
     ruma::events::{
@@ -45,13 +46,13 @@ pub async fn handle_command(
         "sticker" => handle_sticker(args, event, room).await,
         "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, config).await,
-        _ => println!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
+        _ => debug!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
 }
 
 async fn handle_help(event: OriginalSyncRoomMessageEvent, room: Room, config: Config) {
     let trusted = is_user_trusted(&event.sender, config.clone());
-    println!("Got !help in {} from {}, trusted={trusted}", room.room_id(), event.sender);
+    debug!("Got !help in {} from {}, trusted={trusted}", room.room_id(), event.sender);
     let msg = if trusted {
         format!("{}\n{}", HELP, TRUSTED_HELP)
     } else {
@@ -59,18 +60,18 @@ async fn handle_help(event: OriginalSyncRoomMessageEvent, room: Room, config: Co
     };
     let content = RoomMessageEventContent::text_plain(msg);
     if let Err(e) = room.send(content).await {
-        println!("Failed to help in {}: {}", room.room_id(), e);
+        warn!("Failed to help in {}: {}", room.room_id(), e);
     }
 }
 
 async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
-    println!("Got !ping in {} from {}", room.room_id(), event.sender);
+    debug!("Got !ping in {} from {}", room.room_id(), event.sender);
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
     let duration = now - u128::from(event.origin_server_ts.0);
     let msg = format!("I'm here (ping took {duration} ms to arrive)");
     let content = RoomMessageEventContent::text_plain(msg);
     if let Err(e) = room.send(content).await {
-        println!("Failed to ping in {}: {}", room.room_id(), e);
+        warn!("Failed to ping in {}: {}", room.room_id(), e);
     }
 }
 
@@ -82,7 +83,7 @@ async fn handle_spam(
 ) {
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
-    println!("Got !spam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    debug!("Got !spam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
     let max_spam_count = if room.is_public() {
         // No spam in public rooms please...
         // But showing a single spam sticker wouldn't hurt?
@@ -95,7 +96,7 @@ async fn handle_spam(
     } else {
         let content = RoomMessageEventContent::text_plain("Here be spam");
         if let Err(e) = room.send(content).await {
-            println!("Failed to spam in {}: {}", room.room_id(), e);
+            warn!("Failed to spam in {}: {}", room.room_id(), e);
             return;
         }
         return;
@@ -108,7 +109,7 @@ async fn handle_spam(
         let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
         let content = RoomMessageEventContent::text_plain(msg);
         if let Err(e) = room.send(content).await {
-            println!("Failed to spam in {}: {}", room.room_id(), e);
+            warn!("Failed to spam in {}: {}", room.room_id(), e);
         }
     }
 }
@@ -121,7 +122,7 @@ async fn handle_sticker_spam(
 ) {
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
-    println!("Got !stickerspam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    debug!("Got !stickerspam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
     let max_spam_count = if room.is_public() {
         1
     } else if vip {
@@ -142,14 +143,14 @@ async fn handle_sticker_spam(
             spam_select.into(), // mxc
         );
         if let Err(e) = room.send(content).await {
-            println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+            warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
             return
         }
     }
     if count > STICKER_SPAM.len() {
         let content = RoomMessageEventContent::notice_plain("Done!");
         if let Err(e) = room.send(content).await {
-            println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+            warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
         }
     }
 }
@@ -159,7 +160,7 @@ async fn handle_sticker(
     event: OriginalSyncRoomMessageEvent,
     room: Room,
 ) {
-    println!("Got !sticker in {} from {}", room.room_id(), event.sender);
+    debug!("Got !sticker in {} from {}", room.room_id(), event.sender);
     let mxc = args.next().unwrap_or("mxc://spiritcroc.de/mkJFKqrNzBGBcILPTIPlTPOV");
     let body = args.next().unwrap_or("Sticker");
     let content = StickerEventContent::new(
@@ -168,7 +169,7 @@ async fn handle_sticker(
         mxc.into(),
     );
     if let Err(e) = room.send(content).await {
-        println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+        warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
         return
     }
 }
@@ -177,14 +178,14 @@ async fn handle_sticker_broken(
     event: OriginalSyncRoomMessageEvent,
     room: Room,
 ) {
-    println!("Got !broken-sticker in {} from {}", room.room_id(), event.sender);
+    debug!("Got !broken-sticker in {} from {}", room.room_id(), event.sender);
     let content = StickerEventContent::new(
         "Broken sticker".to_string(),
         ImageInfo::new(),
         "".into(), // mxc
     );
     if let Err(e) = room.send(content).await {
-        println!("Failed to stickerspam in {}: {}", room.room_id(), e);
+        warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
         return
     }
 }
@@ -196,7 +197,7 @@ async fn handle_whoami(
 ) {
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted(&event.sender, config.clone());
-    println!("Got !whoami in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    debug!("Got !whoami in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
     let msg = if vip {
         "You are VIP"
     } else if trusted {
@@ -206,6 +207,6 @@ async fn handle_whoami(
     };
     let content = RoomMessageEventContent::text_plain(msg);
     if let Err(e) = room.send(content).await {
-        println!("Failed to spam in {}: {}", room.room_id(), e);
+        warn!("Failed to spam in {}: {}", room.room_id(), e);
     }
 }
