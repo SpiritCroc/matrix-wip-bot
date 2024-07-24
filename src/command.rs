@@ -58,7 +58,7 @@ async fn handle_help(event: OriginalSyncRoomMessageEvent, room: Room, config: Co
     } else {
         HELP.to_string()
     };
-    let content = RoomMessageEventContent::text_plain(msg);
+    let content = RoomMessageEventContent::notice_plain(msg);
     if let Err(e) = room.send(content).await {
         warn!("Failed to help in {}: {}", room.room_id(), e);
     }
@@ -69,7 +69,7 @@ async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
     let duration = now - u128::from(event.origin_server_ts.0);
     let msg = format!("I'm here (ping took {duration} ms to arrive)");
-    let content = RoomMessageEventContent::text_plain(msg);
+    let content = RoomMessageEventContent::notice_plain(msg);
     if let Err(e) = room.send(content).await {
         warn!("Failed to ping in {}: {}", room.room_id(), e);
     }
@@ -205,8 +205,8 @@ async fn handle_whoami(
     } else {
         "You are nobody"
     };
-    let content = RoomMessageEventContent::text_plain(msg);
+    let content = RoomMessageEventContent::notice_plain(msg);
     if let Err(e) = room.send(content).await {
-        warn!("Failed to spam in {}: {}", room.room_id(), e);
+        warn!("Failed to whoami in {}: {}", room.room_id(), e);
     }
 }
