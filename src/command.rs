@@ -90,9 +90,9 @@ async fn handle_spam(
         handle_sticker_spam(args, event, room, config).await;
         return;
     } else if vip {
-        500
+        config.get::<usize>("bot.text_spam.vip_limit").unwrap_or(500)
     } else if trusted {
-        100
+        config.get::<usize>("bot.text_spam.trusted_limit").unwrap_or(100)
     } else {
         let content = RoomMessageEventContent::text_plain("Here be spam");
         if let Err(e) = room.send(content).await {
@@ -126,9 +126,9 @@ async fn handle_sticker_spam(
     let max_spam_count = if room.is_public() {
         1
     } else if vip {
-        500
+        config.get::<usize>("bot.sticker_spam.vip_limit").unwrap_or(500)
     } else if trusted {
-        100
+        config.get::<usize>("bot.sticker_spam.trusted_limit").unwrap_or(100)
     } else {
         1
     };

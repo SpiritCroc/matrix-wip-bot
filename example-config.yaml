@@ -14,3 +14,9 @@ users:
 bot:
   # If you want the bot to respond when mentioned at the message beginning, set this to the bot's display name
   plaintext_ping: "My-Bot-Name"
+  text_spam:
+    vip_limit: 500
+    trusted_limit: 100
+  sticker_spam:
+    vip_limit: 500
+    trusted_limit: 100
