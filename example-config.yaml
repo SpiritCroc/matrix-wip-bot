@@ -20,3 +20,5 @@ bot:
   sticker_spam:
     vip_limit: 500
     trusted_limit: 100
+  typing:
+    max_duration: 20

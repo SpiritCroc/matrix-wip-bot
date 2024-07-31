@@ -1,7 +1,8 @@
 use std::{
     self, cmp, str::SplitWhitespace,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::time::sleep;
 use config::Config;
 use log::{debug, warn};
 use matrix_sdk::{
@@ -29,7 +30,8 @@ const HELP: &str = "- !help\n\
                     - !sticker [mxc [body]]\n\
                     - !broken-sticker";
 const TRUSTED_HELP: &str = "- !spam [count]\n\
-                            - !stickerspam [count]";
+                            - !stickerspam [count]\n\
+                            - !typing [seconds]";
 
 pub async fn handle_command(
     cmd: &String,
@@ -44,6 +46,7 @@ pub async fn handle_command(
         "spam" => handle_spam(args, event, room, config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, config).await,
         "sticker" => handle_sticker(args, event, room).await,
+        "typing" => handle_typing(args, event, room, config).await,
         "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, config).await,
         _ => debug!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
@@ -209,4 +212,56 @@ async fn handle_whoami(
     if let Err(e) = room.send(content).await {
         warn!("Failed to whoami in {}: {}", room.room_id(), e);
     }
+}
+
+async fn handle_typing(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    config: Config,
+) {
+    let trusted = is_user_trusted(&event.sender, config.clone());
+    if !trusted {
+        return;
+    }
+
+    let desired_duration = args.next().unwrap_or_default().parse::<u64>();
+    debug!("Got typing ({}) in {} from {}, trusted={trusted}", desired_duration.clone().unwrap_or_default(), room.room_id(), event.sender);
+
+    let max_duration = config.get::<u64>("bot.typing.max_duration").unwrap_or(20);
+    let duration = cmp::min(desired_duration.unwrap_or(5), max_duration);
+
+    // Need to refresh the typing every once in a while:
+    // https://spec.matrix.org/v1.11/client-server-api/#put_matrixclientv3roomsroomidtypinguserid
+    tokio::spawn(async move {
+        let typing_period = 5;
+        let mut remaining = duration;
+        loop {
+            if let Err(e) = room.typing_notice(true).await {
+                warn!("Failed to start typing in {}: {}", room.room_id(), e);
+                return;
+            }
+            if remaining <= 0 {
+                break;
+            }
+            if remaining > typing_period {
+                sleep(Duration::from_secs(typing_period)).await;
+                remaining -= typing_period;
+            } else {
+                sleep(Duration::from_secs(remaining)).await;
+                break;
+            }
+        }
+        if let Err(e) = room.typing_notice(false).await {
+            warn!("Failed to stop typing in {}: {}", room.room_id(), e);
+            return;
+        }
+        let msg = format!("I was just typing for {duration} seconds!");
+        let content = RoomMessageEventContent::notice_plain(msg);
+        if let Err(e) = room.send(content).await {
+            warn!("Failed to finalize typing in {}: {}", room.room_id(), e);
+        } else {
+            debug!("Finished typing after {duration} in {}", room.room_id());
+        }
+    });
 }
