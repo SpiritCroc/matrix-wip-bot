@@ -107,14 +107,16 @@ async fn handle_spam(
     let desired_count = args.next().unwrap_or_default().parse::<usize>();
     let custom_count = desired_count.is_ok();
     let count = cmp::min(desired_count.unwrap_or(TEXT_SPAM.len()), max_spam_count);
-    for i in 0..count {
-        let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
-        let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
-        let content = RoomMessageEventContent::text_plain(msg);
-        if let Err(e) = room.send(content).await {
-            warn!("Failed to spam in {}: {}", room.room_id(), e);
+    tokio::spawn(async move {
+        for i in 0..count {
+            let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
+            let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
+            let content = RoomMessageEventContent::text_plain(msg);
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to spam in {}: {}", room.room_id(), e);
+            }
         }
-    }
+    });
 }
 
 async fn handle_sticker_spam(
@@ -137,25 +139,27 @@ async fn handle_sticker_spam(
     };
     let desired_count = args.next().unwrap_or_default().parse::<usize>();
     let count = cmp::min(desired_count.unwrap_or(STICKER_SPAM.len()), max_spam_count);
-    for i in 0..count {
-        let spam_select = STICKER_SPAM[i % STICKER_SPAM.len()];
-        let text_spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
-        let content = StickerEventContent::new(
-            text_spam_select.to_string(), // body
-            ImageInfo::new(),
-            spam_select.into(), // mxc
-        );
-        if let Err(e) = room.send(content).await {
-            warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
-            return
+    tokio::spawn(async move {
+        for i in 0..count {
+            let spam_select = STICKER_SPAM[i % STICKER_SPAM.len()];
+            let text_spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
+            let content = StickerEventContent::new(
+                text_spam_select.to_string(), // body
+                ImageInfo::new(),
+                spam_select.into(), // mxc
+            );
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
+                return
+            }
         }
-    }
-    if count > STICKER_SPAM.len() {
-        let content = RoomMessageEventContent::notice_plain("Done!");
-        if let Err(e) = room.send(content).await {
-            warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
+        if count > STICKER_SPAM.len() {
+            let content = RoomMessageEventContent::notice_plain("Done!");
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to stickerspam in {}: {}", room.room_id(), e);
+            }
         }
-    }
+    });
 }
 
 async fn handle_sticker(
