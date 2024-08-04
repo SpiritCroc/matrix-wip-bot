@@ -71,8 +71,15 @@ async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
     debug!("Got !ping in {} from {}", room.room_id(), event.sender);
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
     let duration = now - u128::from(event.origin_server_ts.0);
-    let msg = format!("I'm here (ping took {duration} ms to arrive)");
-    let content = RoomMessageEventContent::notice_plain(msg);
+    let msg_plain = format!("I'm here (ping took {duration} ms to arrive)");
+    let msg_html = format!(
+        "<a href='https://matrix.to/#/{}'>{}</a>: Pong! (<a href='https://matrix.to/#/{}/{}'>ping</a> took {duration} ms to arrive)",
+        event.sender,
+        event.sender,
+        room.room_id(),
+        event.event_id,
+    );
+    let content = RoomMessageEventContent::notice_html(msg_plain, msg_html);
     if let Err(e) = room.send(content).await {
         warn!("Failed to ping in {}: {}", room.room_id(), e);
     }
