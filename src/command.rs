@@ -24,14 +24,14 @@ use crate::users::{is_user_vip, is_user_trusted, is_user_trusted_not_vip};
 mod spam;
 use spam::{TEXT_SPAM, STICKER_SPAM};
 
-const HELP: &str = "- !help\n\
-                    - !ping\n\
-                    - !whoami\n\
-                    - !sticker [mxc [body]]\n\
-                    - !broken-sticker";
-const TRUSTED_HELP: &str = "- !spam [count]\n\
-                            - !stickerspam [count]\n\
-                            - !typing [seconds]";
+const HELP: &str = "- `!help` - Print this help\n\
+                    - `!ping` - Pong\n\
+                    - `!whoami` - View your permission level\n\
+                    - `!sticker [mxc [body]]` - Send a sticker\n\
+                    - `!broken-sticker` - Send a sticker with empty url";
+const TRUSTED_HELP: &str = "- `!spam [count]` - Send lots of text messasges\n\
+                            - `!stickerspam [count]` - Send lots of stickers\n\
+                            - `!typing [seconds]` - Send typing indicator";
 
 pub async fn handle_command(
     cmd: &String,
@@ -61,7 +61,7 @@ async fn handle_help(event: OriginalSyncRoomMessageEvent, room: Room, config: Co
     } else {
         HELP.to_string()
     };
-    let content = RoomMessageEventContent::notice_plain(msg);
+    let content = RoomMessageEventContent::notice_markdown(msg);
     if let Err(e) = room.send(content).await {
         warn!("Failed to help in {}: {}", room.room_id(), e);
     }
