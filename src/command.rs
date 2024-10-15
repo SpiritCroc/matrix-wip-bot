@@ -12,6 +12,9 @@ use matrix_sdk::{
             message::{
                 OriginalSyncRoomMessageEvent,
                 RoomMessageEventContent,
+                AddMentions,
+                ReplyWithinThread,
+                ForwardThread,
             },
             ImageInfo,
         },
@@ -31,6 +34,8 @@ const HELP: &str = "- `!help` - Print this help\n\
                     - `!broken-sticker` - Send a sticker with empty url";
 const TRUSTED_HELP: &str = "- `!spam [count]` - Send lots of text messasges\n\
                             - `!stickerspam [count]` - Send lots of stickers\n\
+                            - `!thread [count]` - Send lots of text messages in a thread\n\
+                            - `!reply [count]` - Send lots of text messages as replies\n\
                             - `!typing [seconds]` - Send typing indicator";
 
 pub async fn handle_command(
@@ -46,6 +51,9 @@ pub async fn handle_command(
         "spam" => handle_spam(args, event, room, config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, config).await,
         "sticker" => handle_sticker(args, event, room).await,
+        "thread" => handle_thread_spam(args, event, room, config).await,
+        "reply" => handle_reply_spam(args, event, room, config).await,
+        "replies" => handle_reply_spam(args, event, room, config).await,
         "typing" => handle_typing(args, event, room, config).await,
         "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, config).await,
@@ -121,6 +129,94 @@ async fn handle_spam(
             let content = RoomMessageEventContent::text_plain(msg);
             if let Err(e) = room.send(content).await {
                 warn!("Failed to spam in {}: {}", room.room_id(), e);
+                return;
+            }
+        }
+    });
+}
+
+async fn handle_thread_spam(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    config: Config
+) {
+    let vip = is_user_vip(&event.sender, config.clone());
+    let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
+    debug!("Got !thread in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    let max_spam_count = if room.is_public() {
+        // TODO single message fallback
+        return;
+    } else if vip {
+        config.get::<usize>("bot.text_spam.vip_limit").unwrap_or(500)
+    } else if trusted {
+        config.get::<usize>("bot.text_spam.trusted_limit").unwrap_or(100)
+    } else {
+        // TODO single message fallback
+        return;
+    };
+    let desired_count = args.next().unwrap_or_default().parse::<usize>();
+    let custom_count = desired_count.is_ok();
+    let count = cmp::min(desired_count.unwrap_or(TEXT_SPAM.len()), max_spam_count);
+    let full_orig_event = event.into_full_event(room.room_id().to_owned());
+    tokio::spawn(async move {
+        for i in 0..count {
+            let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
+            let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
+            let content = RoomMessageEventContent::text_plain(msg).make_for_thread(
+                &full_orig_event,
+                ReplyWithinThread::No,
+                AddMentions::No,
+            );
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to thread-spam in {}: {}", room.room_id(), e);
+                return;
+            }
+        }
+    });
+}
+
+async fn handle_reply_spam(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    config: Config
+) {
+    let vip = is_user_vip(&event.sender, config.clone());
+    let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
+    debug!("Got !reply in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    let max_spam_count = if room.is_public() {
+        // TODO single reply fallback
+        return;
+    } else if vip {
+        config.get::<usize>("bot.text_spam.vip_limit").unwrap_or(500)
+    } else if trusted {
+        config.get::<usize>("bot.text_spam.trusted_limit").unwrap_or(100)
+    } else {
+        // TODO single reply fallback
+        return;
+    };
+    let desired_count = args.next().unwrap_or_default().parse::<usize>();
+    let custom_count = desired_count.is_ok();
+    let count = cmp::min(desired_count.unwrap_or(1), max_spam_count);
+    let reply_to = event.into_full_event(room.room_id().to_owned());
+    tokio::spawn(async move {
+        for i in 0..count {
+            let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
+            let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
+            let content = RoomMessageEventContent::text_plain(msg).make_reply_to(
+                &reply_to,
+                ForwardThread::No,
+                AddMentions::No,
+            );
+            match room.send(content).await {
+                Err(e) => {
+                    warn!("Failed to thread-spam in {}: {}", room.room_id(), e);
+                    return;
+                }
+                Ok(_r) => {
+                    // TODO reply_to = ...;
+                }
             }
         }
     });
