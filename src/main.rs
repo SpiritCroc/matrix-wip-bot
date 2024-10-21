@@ -6,10 +6,15 @@ use matrix_sdk::{
     event_handler::Ctx,
     matrix_auth::MatrixSession,
     Client, Room, RoomState,
-    ruma::events::room::message::{
-        MessageType, OriginalSyncRoomMessageEvent,
+    ruma::{
+        events::room::{
+            message::{
+                MessageType, OriginalSyncRoomMessageEvent,
+            },
+            member::StrippedRoomMemberEvent,
+        },
+        OwnedUserId,
     },
-    ruma::events::room::member::StrippedRoomMemberEvent,
     RoomMemberships,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,6 +34,7 @@ struct WipContext {
     config: Config,
     allowed_pings: Vec<String>,
     launched_ts: u128,
+    username: OwnedUserId,
     media_client: Option<Client>,
 }
 
@@ -110,6 +116,7 @@ async fn main() -> anyhow::Result<()> {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis(),
+        username: bot_client.user_id().expect("Client failed to give us a user ID, did login fail?").into(),
         media_client,
     };
 

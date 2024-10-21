@@ -12,6 +12,7 @@ use matrix_sdk::{
         room::{
             message::{
                 OriginalSyncRoomMessageEvent,
+                OriginalRoomMessageEvent,
                 RoomMessageEventContent,
                 AddMentions,
                 ReplyWithinThread,
@@ -23,6 +24,7 @@ use matrix_sdk::{
             MediaSource,
             ThumbnailInfo,
         },
+        MessageLikeUnsigned,
         sticker::StickerEventContent,
     },
     attachment::BaseThumbnailInfo,
@@ -70,8 +72,8 @@ pub async fn handle_command(
         "thumbnail" => handle_image_spam_with_count(1, args, event, room, context, true).await,
         "imagespam" => handle_image_spam(args, event, room, context).await,
         "thread" => handle_thread_spam(args, event, room, context.config).await,
-        "reply" => handle_reply_spam(args, event, room, context.config).await,
-        "replies" => handle_reply_spam(args, event, room, context.config).await,
+        "reply" => handle_reply_spam(args, event, room, context).await,
+        "replies" => handle_reply_spam(args, event, room, context).await,
         "typing" => handle_typing(args, event, room, context.config).await,
         "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, context.config).await,
@@ -198,8 +200,9 @@ async fn handle_reply_spam(
     mut args: SplitWhitespace<'_>,
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    config: Config
+    context: WipContext,
 ) {
+    let config = context.config;
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !reply in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
@@ -217,7 +220,7 @@ async fn handle_reply_spam(
     let desired_count = args.next().unwrap_or_default().parse::<usize>();
     let custom_count = desired_count.is_ok();
     let count = cmp::min(desired_count.unwrap_or(1), max_spam_count);
-    let reply_to = event.into_full_event(room.room_id().to_owned());
+    let mut reply_to = event.into_full_event(room.room_id().to_owned());
     tokio::spawn(async move {
         for i in 0..count {
             let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
@@ -227,13 +230,20 @@ async fn handle_reply_spam(
                 ForwardThread::No,
                 AddMentions::No,
             );
-            match room.send(content).await {
+            match room.send(content.clone()).await {
                 Err(e) => {
                     warn!("Failed to thread-spam in {}: {}", room.room_id(), e);
                     return;
                 }
-                Ok(_r) => {
-                    // TODO reply_to = ...;
+                Ok(r) => {
+                    reply_to = OriginalRoomMessageEvent{
+                        content,
+                        event_id: r.event_id,
+                        origin_server_ts: reply_to.origin_server_ts,
+                        room_id: room.room_id().into(),
+                        sender: context.username.to_owned(),
+                        unsigned: MessageLikeUnsigned::new(),
+                    }
                 }
             }
         }
