@@ -24,6 +24,8 @@ use matrix_sdk::{
         AttachmentConfig,
         AttachmentInfo,
         BaseImageInfo,
+        BaseThumbnailInfo,
+        Thumbnail,
     },
 };
 use rand;
@@ -45,6 +47,7 @@ const TRUSTED_HELP: &str = "- `!spam [count]` - Send lots of text messasges\n\
                             - `!stickerspam [count]` - Send lots of stickers\n\
                             - `!image [width [height]]` - Send an image that you have never seen before\n\
                             - `!imagespam [count [width [height]]]` - Like `!image` but more of that\n\
+                            - `!thumb [width [height]]` - Like `!image` but with an added thumbnail\n\
                             - `!thread [count]` - Send lots of text messages in a thread\n\
                             - `!reply [count]` - Send lots of text messages as replies\n\
                             - `!typing [seconds]` - Send typing indicator";
@@ -62,7 +65,8 @@ pub async fn handle_command(
         "spam" => handle_spam(args, event, room, config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, config).await,
         "sticker" => handle_sticker(args, event, room).await,
-        "image" => handle_image_spam_with_count(1, args, event, room, config).await,
+        "image" => handle_image_spam_with_count(1, args, event, room, config, false).await,
+        "thumb" => handle_image_spam_with_count(1, args, event, room, config, true).await,
         "imagespam" => handle_image_spam(args, event, room, config).await,
         "thread" => handle_thread_spam(args, event, room, config).await,
         "reply" => handle_reply_spam(args, event, room, config).await,
@@ -320,7 +324,7 @@ async fn handle_image_spam(
     config: Config
 ) {
     let desired_count = args.next().unwrap_or_default().parse::<usize>().unwrap_or(3);
-    handle_image_spam_with_count(desired_count, args, event, room, config).await;
+    handle_image_spam_with_count(desired_count, args, event, room, config, false).await;
 }
 
 async fn handle_image_spam_with_count(
@@ -328,11 +332,12 @@ async fn handle_image_spam_with_count(
     mut args: SplitWhitespace<'_>,
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    config: Config
+    config: Config,
+    with_thumbnail: bool,
 ) {
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
-    debug!("Got !image in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    debug!("Got !image {desired_count} in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
     let max_spam_count = if room.is_public() {
         1
     } else if vip {
@@ -347,7 +352,7 @@ async fn handle_image_spam_with_count(
     let width = cmp::min(args.next().unwrap_or_default().parse::<usize>().unwrap_or(150), max_size);
     let height = cmp::min(args.next().unwrap_or_default().parse::<usize>().unwrap_or(width), max_size);
     let text_override = args.next().map(|t| t.to_string());
-    let font_size = if count == 1 { 42.0 } else { 64.0 };
+    let font_size = (if count == 1 { 42.0 } else { 64.0 }) * ((width as f64)/150.0);
     tokio::spawn(async move {
         for i in 1..=count {
             let text = if count == 1 { text_override.clone() } else { Some(i.to_string()) };
@@ -369,6 +374,7 @@ async fn handle_image_spam_with_count(
                 }
             };
             let image_size = image.len();
+
             let attachment_info = AttachmentInfo::Image(
                 BaseImageInfo {
                     width: width.try_into().ok(),
@@ -377,8 +383,44 @@ async fn handle_image_spam_with_count(
                     blurhash: None
                 }
             );
-            let attachment_config = AttachmentConfig::new()
+
+            let attachment_config = if with_thumbnail {
+                let thumbnail_text = format!("t.{}", text.unwrap_or_default());
+                let thumb_width = width/2;
+                let thumb_height = height/2;
+                let thumb_font_size = font_size/2.0;
+                let thumbnail_image = image_generator::create_text_image(
+                    Some(&thumbnail_text),
+                    &background_color,
+                    "#ffffff",
+                    thumb_width,
+                    thumb_height,
+                    thumb_font_size
+                ).await;
+                match thumbnail_image {
+                    Ok(thumb) => {
+                        let thumbnail_info = BaseThumbnailInfo {
+                            width: thumb_width.try_into().ok(),
+                            height: thumb_height.try_into().ok(),
+                            size: thumb.len().try_into().ok(),
+                        };
+                        let thumbnail = Thumbnail {
+                            data: thumb,
+                            content_type: mime::IMAGE_PNG,
+                            info: Some(thumbnail_info),
+                        };
+                        AttachmentConfig::with_thumbnail(thumbnail)
+                    }
+                    Err(e) => {
+                        warn!("Failed to generate thumbnail: {}", e);
+                        AttachmentConfig::new()
+                    }
+                }
+            } else {
+                AttachmentConfig::new()
+            }
                 .info(attachment_info);
+
             if let Err(e) = room.send_attachment(
                 &format!("{i}.png"),
                 &mime::IMAGE_PNG,

@@ -20,7 +20,6 @@ pub async fn create_text_image(
     let mut foreground_pixel = PixelWand::new();
     foreground_pixel.set_color(foreground_color)?;
 
-
     let mut magick = MagickWand::new();
     magick.new_image(width, height, &background)?;
 
