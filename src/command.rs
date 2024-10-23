@@ -67,6 +67,7 @@ pub async fn handle_command(
         "sticker" => handle_sticker(args, event, room).await,
         "image" => handle_image_spam_with_count(1, args, event, room, config, false).await,
         "thumb" => handle_image_spam_with_count(1, args, event, room, config, true).await,
+        "thumbnail" => handle_image_spam_with_count(1, args, event, room, config, true).await,
         "imagespam" => handle_image_spam(args, event, room, config).await,
         "thread" => handle_thread_spam(args, event, room, config).await,
         "reply" => handle_reply_spam(args, event, room, config).await,
