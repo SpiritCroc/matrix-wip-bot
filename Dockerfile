@@ -2,6 +2,7 @@ FROM docker.io/rust:1.82.0-bookworm
 
 # ImageMagick - from https://github.com/nlfiedler/magick-rust/blob/master/docker/Dockerfile
 # NOTE: once Debian packages imagemagick 7.1.1-26 or later, can switch to that
+# (required by https://github.com/nlfiedler/magick-rust)
 RUN apt-get update \
  && apt-get -y install curl build-essential clang pkg-config libjpeg-turbo-progs libpng-dev \
  && rm -rfv /var/lib/apt/lists/*
@@ -15,6 +16,7 @@ RUN curl https://imagemagick.org/archive/ImageMagick.tar.gz | tar xz \
  && make install \
  && cd .. \
  && rm -r ImageMagick-${MAGICK_VERSION}*
+RUN ldconfig /usr/local/lib
 
 # WIP-Bot
 
