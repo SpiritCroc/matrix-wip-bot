@@ -7,6 +7,7 @@ use config::Config;
 use log::{trace, debug, warn, error};
 use matrix_sdk::{
     Room,
+    ruma::assign,
     ruma::events::{
         room::{
             message::{
@@ -15,18 +16,16 @@ use matrix_sdk::{
                 AddMentions,
                 ReplyWithinThread,
                 ForwardThread,
+                ImageMessageEventContent,
+                MessageType,
             },
             ImageInfo,
+            MediaSource,
+            ThumbnailInfo,
         },
         sticker::StickerEventContent,
     },
-    attachment::{
-        AttachmentConfig,
-        AttachmentInfo,
-        BaseImageInfo,
-        BaseThumbnailInfo,
-        Thumbnail,
-    },
+    attachment::BaseThumbnailInfo,
 };
 use rand;
 
@@ -354,6 +353,9 @@ async fn handle_image_spam_with_count(
     let height = cmp::min(args.next().unwrap_or_default().parse::<usize>().unwrap_or(width), max_size);
     let text_override = args.next().map(|t| t.to_string());
     let font_size = (if count == 1 { 42.0 } else { 64.0 }) * ((width as f64)/150.0);
+
+    let client = room.client();
+
     tokio::spawn(async move {
         for i in 1..=count {
             let text = if count == 1 { text_override.clone() } else { Some(i.to_string()) };
@@ -376,62 +378,89 @@ async fn handle_image_spam_with_count(
             };
             let image_size = image.len();
 
-            let attachment_info = AttachmentInfo::Image(
-                BaseImageInfo {
-                    width: width.try_into().ok(),
-                    height: height.try_into().ok(),
-                    size: image_size.try_into().ok(),
-                    blurhash: None
-                }
-            );
-
-            let attachment_config = if with_thumbnail {
+            let (thumbnail_info, thumbnail_uri) = if with_thumbnail {
                 let thumbnail_text = format!("t.{}", text.unwrap_or_default());
                 let thumb_width = width/2;
                 let thumb_height = height/2;
                 let thumb_font_size = font_size/2.0;
-                let thumbnail_image = image_generator::create_text_image(
+                match image_generator::create_text_image(
                     Some(&thumbnail_text),
                     &background_color,
                     "#ffffff",
                     thumb_width,
                     thumb_height,
                     thumb_font_size
-                ).await;
-                match thumbnail_image {
-                    Ok(thumb) => {
+                ).await {
+                    Err(e) => {
+                        error!("Failed to generate thumbnail image: {}", e);
+                        (None, None)
+                    }
+                    Ok(thumb_image) => {
                         let thumbnail_info = BaseThumbnailInfo {
                             width: thumb_width.try_into().ok(),
                             height: thumb_height.try_into().ok(),
-                            size: thumb.len().try_into().ok(),
+                            size: thumb_image.len().try_into().ok(),
                         };
-                        let thumbnail = Thumbnail {
-                            data: thumb,
-                            content_type: mime::IMAGE_PNG,
-                            info: Some(thumbnail_info),
-                        };
-                        AttachmentConfig::with_thumbnail(thumbnail)
-                    }
-                    Err(e) => {
-                        warn!("Failed to generate thumbnail: {}", e);
-                        AttachmentConfig::new()
+
+                        match client.media().upload(
+                            &mime::IMAGE_PNG,
+                            thumb_image,
+                        ).await {
+                            Ok(u) => {
+                                (
+                                    Some(Box::new(ThumbnailInfo::from(thumbnail_info))),
+                                    Some(u.content_uri)
+                                )
+                            },
+                            Err(e) => {
+                                error!("Failed to upload thumbnail: {}", e);
+                                (None, None)
+                            }
+                        }
                     }
                 }
             } else {
-                AttachmentConfig::new()
-            }
-                .info(attachment_info);
+                (None, None)
+            };
 
-            if let Err(e) = room.send_attachment(
-                &format!("{i}.png"),
+            let thumbnail_source = thumbnail_uri.clone().map(MediaSource::Plain);
+
+            let image_info = assign!(ImageInfo::new(), {
+                width: width.try_into().ok(),
+                height: height.try_into().ok(),
+                size: image_size.try_into().ok(),
+                blurhash: None,
+                mimetype: Some(mime::IMAGE_PNG.essence_str().to_string()),
+                thumbnail_info: thumbnail_info,
+                thumbnail_source: thumbnail_source,
+            });
+
+            let image_upload = match client.media().upload(
                 &mime::IMAGE_PNG,
-                image,
-                attachment_config
+                image
             ).await {
-                warn!("Failed to imagespam in {}: {}", room.room_id(), e);
-                return
+                Ok(u) => u,
+                Err(e) => {
+                    error!("Failed to upload image: {}", e);
+                    return
+                }
+            };
+
+            let image_content = ImageMessageEventContent::plain(
+                format!("{i}.png"),
+                image_upload.content_uri.clone(),
+            ).info(Some(Box::new(image_info)));
+
+            let message = RoomMessageEventContent::new(
+                MessageType::Image(image_content)
+            );
+
+            if let Err(e) = room.send(message).await {
+                warn!("Failed to send image in {}: {}", room.room_id(), e);
+                return;
             }
-            trace!("Successfully sent image with size {image_size}");
+
+            trace!("Successfully sent image with size {image_size}, mxc {} and thumbnail {:?}", image_upload.content_uri, thumbnail_uri);
         }
     });
 }
