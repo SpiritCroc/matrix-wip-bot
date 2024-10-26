@@ -13,6 +13,7 @@ use matrix_sdk::{
     RoomMemberships,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 use tokio::fs;
 use tokio::time::{sleep, Duration};
 
@@ -23,20 +24,12 @@ use crate::command::handle_command;
 use crate::users::is_user_trusted;
 
 // Things we want to pass to message/event handlers
+#[derive(Clone)]
 struct WipContext {
     config: Config,
     allowed_pings: Vec<String>,
     launched_ts: u128,
-}
-
-impl Clone for WipContext {
-    fn clone(&self) -> Self{
-        WipContext {
-            config: self.config.clone(),
-            allowed_pings: self.allowed_pings.clone(),
-            launched_ts: self.launched_ts.clone(),
-        }
-    }
+    media_client: Option<Client>,
 }
 
 #[tokio::main]
@@ -63,61 +56,106 @@ async fn main() -> anyhow::Result<()> {
         ]
     ).unwrap_or_default();
 
+    debug!("Data dir configured at {}", data_dir.to_str().unwrap_or_default());
+
+    let device_name = config.get::<String>("login.device_name").unwrap_or(String::from("wip-bot"));
+
+    let bot_client = get_logged_in_client(
+        "bot",
+        &hs_url,
+        &db_path,
+        &session_path,
+        &username,
+        &password,
+        &device_name,
+    ).await?;
+
+    let media_hs = config.get::<String>("media_login.homeserver_url");
+    let media_client = if let Ok(media_hs) = media_hs {
+        debug!("Found media client config for {media_hs}");
+        let media_hs_url = Url::parse(&media_hs).expect("Invalid media homeserver url");
+        let media_username = config.get::<String>("media_login.username").expect("Username missing in config for media user");
+        let media_password = config.get::<String>("media_login.password").expect("Password missing in config for media user");
+        let media_db_path = data_dir.join("media_db");
+        let media_session_path = data_dir.join("media_session");
+        let media_device_name = config.get::<String>("media_login.device_name").unwrap_or(device_name);
+        let media_client = get_logged_in_client(
+            "media",
+            &media_hs_url,
+            &media_db_path,
+            &media_session_path,
+            &media_username,
+            &media_password,
+            &media_device_name,
+        ).await?;
+        Some(media_client)
+    } else {
+        None
+    };
+
     let wip_context = WipContext {
         config: config.clone(),
         allowed_pings,
         launched_ts: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis()
+            .as_millis(),
+        media_client,
     };
 
-    debug!("Data dir configured at {}", data_dir.to_str().unwrap_or_default());
-    debug!("Logging into {hs_url} as {username}...");
+    bot_client.add_event_handler_context(wip_context);
 
+    // This one is possibly also for old state events handled before
+    bot_client.add_event_handler(handle_invites);
+
+    // Sync once without message handler to not deal with old messages
+    let sync_response = bot_client.sync_once(SyncSettings::default()).await.unwrap();
+    info!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
+
+    // Actual message handling and sync loop
+    bot_client.add_event_handler(handle_message);
+    bot_client.sync(SyncSettings::default().token(sync_response.next_batch)).await?;
+
+    Ok(())
+}
+
+async fn get_logged_in_client(
+    log_tag: &str,
+    hs_url: &Url,
+    db_path: &PathBuf,
+    session_path: &PathBuf,
+    username: &str,
+    password: &str,
+    device_name: &str,
+) -> anyhow::Result<Client> {
+    debug!("Logging {log_tag} into {hs_url} as {username}...");
     let client = Client::builder()
-        .homeserver_url(&hs_url)
-        .sqlite_store(&db_path, None)
+        .homeserver_url(hs_url)
+        .sqlite_store(db_path, None)
         .build()
         .await?;
 
     if session_path.exists() {
-        info!("Restoring old login...");
+        info!("Restoring old {log_tag} login...");
         let serialized_session = fs::read_to_string(session_path).await?;
         let user_session: MatrixSession = serde_json::from_str(&serialized_session)?;
         client.restore_session(user_session).await?;
     } else {
-        info!("Doing a fresh login...");
-
-        let device_name = config.get::<String>("login.device_name").unwrap_or(String::from("wip-bot"));
+        info!("Doing a fresh {log_tag} login...");
 
         let matrix_auth = client.matrix_auth();
         let login_response = matrix_auth
-            .login_username(&username, &password)
-            .initial_device_display_name(&device_name)
+            .login_username(username, password)
+            .initial_device_display_name(device_name)
             .await?;
 
-        info!("Logged in as {}", login_response.device_id);
+        info!("Logged in {log_tag} as {}", login_response.device_id);
 
         let user_session = matrix_auth.session().expect("A logged-in client should have a session");
         let serialized_session = serde_json::to_string(&user_session)?;
         fs::write(session_path, serialized_session).await?;
     }
-
-    client.add_event_handler_context(wip_context);
-
-    // This one is possibly also for old state events handled before
-    client.add_event_handler(handle_invites);
-
-    // Sync once without message handler to not deal with old messages
-    let sync_response = client.sync_once(SyncSettings::default()).await.unwrap();
-    info!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
-
-    // Actual message handling and sync loop
-    client.add_event_handler(handle_message);
-    client.sync(SyncSettings::default().token(sync_response.next_batch)).await?;
-
-    Ok(())
+    Ok(client)
 }
 
 // From https://github.com/matrix-org/matrix-rust-sdk/blob/main/examples/autojoin/src/main.rs
@@ -192,8 +230,8 @@ async fn handle_message(
     // or was sent in a DM.
     if cmd.starts_with('!') {
         let cmd = &cmd[1..].to_string();
-        handle_command(cmd, split_body, event, room, wip_context.0.config).await;
+        handle_command(cmd, split_body, event, room, wip_context.0).await;
     } else if is_mention || room.members(RoomMemberships::JOIN).await.unwrap_or_default().len() == 2 {
-        handle_command(&cmd, split_body, event, room, wip_context.0.config).await;
+        handle_command(&cmd, split_body, event, room, wip_context.0).await;
     }
 }

@@ -32,6 +32,7 @@ use rand;
 use crate::{
     users::{is_user_vip, is_user_trusted, is_user_trusted_not_vip},
     image_generator,
+    WipContext,
 };
 
 mod spam;
@@ -56,24 +57,24 @@ pub async fn handle_command(
     args: SplitWhitespace<'_>,
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    config: Config,
+    context: WipContext,
 ) {
     match cmd.as_str() {
-        "help" => handle_help(event, room, config).await,
+        "help" => handle_help(event, room, context.config).await,
         "ping" => handle_ping(event, room).await,
-        "spam" => handle_spam(args, event, room, config).await,
-        "stickerspam" => handle_sticker_spam(args, event, room, config).await,
+        "spam" => handle_spam(args, event, room, context.config).await,
+        "stickerspam" => handle_sticker_spam(args, event, room, context.config).await,
         "sticker" => handle_sticker(args, event, room).await,
-        "image" => handle_image_spam_with_count(1, args, event, room, config, false).await,
-        "thumb" => handle_image_spam_with_count(1, args, event, room, config, true).await,
-        "thumbnail" => handle_image_spam_with_count(1, args, event, room, config, true).await,
-        "imagespam" => handle_image_spam(args, event, room, config).await,
-        "thread" => handle_thread_spam(args, event, room, config).await,
-        "reply" => handle_reply_spam(args, event, room, config).await,
-        "replies" => handle_reply_spam(args, event, room, config).await,
-        "typing" => handle_typing(args, event, room, config).await,
+        "image" => handle_image_spam_with_count(1, args, event, room, context, false).await,
+        "thumb" => handle_image_spam_with_count(1, args, event, room, context, true).await,
+        "thumbnail" => handle_image_spam_with_count(1, args, event, room, context, true).await,
+        "imagespam" => handle_image_spam(args, event, room, context).await,
+        "thread" => handle_thread_spam(args, event, room, context.config).await,
+        "reply" => handle_reply_spam(args, event, room, context.config).await,
+        "replies" => handle_reply_spam(args, event, room, context.config).await,
+        "typing" => handle_typing(args, event, room, context.config).await,
         "broken-sticker" => handle_sticker_broken(event, room).await,
-        "whoami" => handle_whoami(event, room, config).await,
+        "whoami" => handle_whoami(event, room, context.config).await,
         _ => debug!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
 }
@@ -321,10 +322,10 @@ async fn handle_image_spam(
     mut args: SplitWhitespace<'_>,
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    config: Config
+    context: WipContext,
 ) {
     let desired_count = args.next().unwrap_or_default().parse::<usize>().unwrap_or(3);
-    handle_image_spam_with_count(desired_count, args, event, room, config, false).await;
+    handle_image_spam_with_count(desired_count, args, event, room, context, false).await;
 }
 
 async fn handle_image_spam_with_count(
@@ -332,9 +333,10 @@ async fn handle_image_spam_with_count(
     mut args: SplitWhitespace<'_>,
     event: OriginalSyncRoomMessageEvent,
     room: Room,
-    config: Config,
+    context: WipContext,
     with_thumbnail: bool,
 ) {
+    let config = context.config;
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !image {desired_count} in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
@@ -354,7 +356,7 @@ async fn handle_image_spam_with_count(
     let text_override = args.next().map(|t| t.to_string());
     let font_size = (if count == 1 { 42.0 } else { 64.0 }) * ((width as f64)/150.0);
 
-    let client = room.client();
+    let media_client = context.media_client.unwrap_or_else(|| room.client());
 
     tokio::spawn(async move {
         for i in 1..=count {
@@ -402,7 +404,7 @@ async fn handle_image_spam_with_count(
                             size: thumb_image.len().try_into().ok(),
                         };
 
-                        match client.media().upload(
+                        match media_client.media().upload(
                             &mime::IMAGE_PNG,
                             thumb_image,
                         ).await {
@@ -435,7 +437,7 @@ async fn handle_image_spam_with_count(
                 thumbnail_source: thumbnail_source,
             });
 
-            let image_upload = match client.media().upload(
+            let image_upload = match media_client.media().upload(
                 &mime::IMAGE_PNG,
                 image
             ).await {
