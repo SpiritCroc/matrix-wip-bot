@@ -27,6 +27,7 @@ pub async fn create_text_image(
         let mut foreground = DrawingWand::new();
         foreground.set_fill_color(&foreground_pixel);
         foreground.set_gravity(GravityType::Center);
+        foreground.set_font("DejaVu-Sans")?;
         foreground.set_font_size(font_size);
         foreground.draw_annotation(0.0, 0.0, text)?;
         magick.set_gravity(GravityType::Center)?;
