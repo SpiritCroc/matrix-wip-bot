@@ -12,11 +12,10 @@ use matrix_sdk::{
         room::{
             message::{
                 OriginalSyncRoomMessageEvent,
-                OriginalRoomMessageEvent,
                 RoomMessageEventContent,
                 AddMentions,
                 ReplyWithinThread,
-                ForwardThread,
+                Relation,
                 ImageMessageEventContent,
                 MessageType,
             },
@@ -24,7 +23,7 @@ use matrix_sdk::{
             MediaSource,
             ThumbnailInfo,
         },
-        MessageLikeUnsigned,
+        relation::InReplyTo,
         sticker::StickerEventContent,
     },
     attachment::BaseThumbnailInfo,
@@ -220,30 +219,21 @@ async fn handle_reply_spam(
     let desired_count = args.next().unwrap_or_default().parse::<usize>();
     let custom_count = desired_count.is_ok();
     let count = cmp::min(desired_count.unwrap_or(1), max_spam_count);
-    let mut reply_to = event.into_full_event(room.room_id().to_owned());
+    let mut reply_to = event.event_id;
     tokio::spawn(async move {
         for i in 0..count {
             let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
             let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
-            let content = RoomMessageEventContent::text_plain(msg).make_reply_to(
-                &reply_to,
-                ForwardThread::No,
-                AddMentions::No,
-            );
+            let content = assign!(RoomMessageEventContent::new(MessageType::text_plain(msg)), {
+                relates_to: Some(Relation::Reply { in_reply_to: InReplyTo::new(reply_to) }),
+            });
             match room.send(content.clone()).await {
                 Err(e) => {
                     warn!("Failed to thread-spam in {}: {}", room.room_id(), e);
                     return;
                 }
                 Ok(r) => {
-                    reply_to = OriginalRoomMessageEvent{
-                        content,
-                        event_id: r.event_id,
-                        origin_server_ts: reply_to.origin_server_ts,
-                        room_id: room.room_id().into(),
-                        sender: context.username.to_owned(),
-                        unsigned: MessageLikeUnsigned::new(),
-                    }
+                    reply_to = r.event_id;
                 }
             }
         }
