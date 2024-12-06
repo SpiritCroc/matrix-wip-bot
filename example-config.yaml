@@ -3,6 +3,8 @@ login:
   username: "@wipbot:example.com"
   password: "REDACTED"
   device_name: "wip-bot"
+  # Optional recovery key to verify the bot
+  #recover_key: "E..."
 users:
   # Much spam allowed
   vip:
@@ -11,6 +13,10 @@ users:
   trusted:
     - "example.com"
     - "@trusted:sth.example.com"
+
+# Optional: adjust where to persist data (mainly decryption keys)
+#data_path: /opt/matrix-wip-bot
+
 bot:
   # If you want the bot to respond when mentioned at the message beginning, set this to the bot's display name
   plaintext_ping: "My-Bot-Name"

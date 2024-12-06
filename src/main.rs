@@ -1,5 +1,5 @@
 use config::Config;
-use log::{debug, info, warn};
+use log::{trace, debug, info, warn, error};
 use url::Url;
 use matrix_sdk::{
     config::SyncSettings,
@@ -94,6 +94,14 @@ async fn main() -> anyhow::Result<()> {
     } else {
         None
     };
+
+    if let Ok(recovery_key) = config.get::<String>("login.recovery_key") {
+        let recovery = bot_client.encryption().recovery();
+        match recovery.recover(&recovery_key).await {
+            Ok(_) => info!("Recovery state: {:?}", recovery.state()),
+            Err(e) => error!("Failed to restore recovery key: {}", e),
+        }
+    }
 
     let wip_context = WipContext {
         config: config.clone(),
@@ -202,6 +210,7 @@ async fn handle_message(
     room: Room,
     wip_context: Ctx<WipContext>
 ) {
+    trace!("Message received by {} in {}: {:?}", event.sender, room.room_id(), room.state());
     if room.state() != RoomState::Joined {
         return;
     }
@@ -211,6 +220,7 @@ async fn handle_message(
     let MessageType::Text(text_content) = event.clone().content.msgtype else {
         return;
     };
+    trace!("Message received by {} in {}: {}", event.sender, room.room_id(), text_content.body);
 
     if u128::from(event.origin_server_ts.0) < wip_context.0.launched_ts - 10_000 {
         info!("Ignore message in the past: {} in {}", event.event_id, room.room_id());
