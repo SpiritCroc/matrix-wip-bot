@@ -26,3 +26,7 @@ or
 ```
 podman-compose up
 ```
+
+## Verbose logging
+
+See options for [env_logger](https://docs.rs/env_logger/latest/env_logger/), e.g. run with environment variable `RUST_LOG=trace`.

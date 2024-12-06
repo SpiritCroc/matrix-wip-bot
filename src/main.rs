@@ -45,7 +45,9 @@ async fn main() -> anyhow::Result<()> {
     let username = config.get::<String>("login.username").expect("Username missing in config");
     let password = config.get::<String>("login.password").expect("Password missing in config");
 
-    let data_dir = dirs::data_dir().expect("no data_dir directory found").join("matrix-wip-bot");
+    let data_dir = config.get::<String>("data_path")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::data_dir().expect("no data_dir directory found").join("matrix-wip-bot"));
     let db_path = data_dir.join("db");
     let session_path = data_dir.join("session");
 
