@@ -30,5 +30,8 @@ bot:
     vip_limit: 50
     trusted_limit: 20
     max_size: 2000
+  delay_spam:
+    # Seconds how long we're allowed to sum up spam delays for a single command
+    limit: 30
   typing:
     max_duration: 20

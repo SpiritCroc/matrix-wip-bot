@@ -44,7 +44,7 @@ const HELP: &str = "- `!help` - Print this help\n\
                     - `!whoami` - View your permission level\n\
                     - `!sticker [mxc [body]]` - Send a sticker\n\
                     - `!broken-sticker` - Send a sticker with empty url";
-const TRUSTED_HELP: &str = "- `!spam [count]` - Send lots of text messasges\n\
+const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of text messasges\n\
                             - `!stickerspam [count]` - Send lots of stickers\n\
                             - `!image [width [height]]` - Send an image that you have never seen before\n\
                             - `!imagespam [count [width [height]]]` - Like `!image` but more of that\n\
@@ -140,9 +140,38 @@ async fn handle_spam(
     };
     let desired_count = args.next().unwrap_or_default().parse::<usize>();
     let custom_count = desired_count.is_ok();
-    let count = cmp::min(desired_count.unwrap_or(TEXT_SPAM.len()), max_spam_count);
+    let desired_count = desired_count.unwrap_or(TEXT_SPAM.len());
+    let mut count = cmp::min(desired_count, max_spam_count);
+    let mut effective_delay: u64 = 0;
+    let spam_delay = args.next().unwrap_or_default().parse::<u64>().map(|d| {
+        let max_delay = config.get::<u64>("bot.delay_spam.limit").unwrap_or(20);
+        effective_delay = cmp::max(cmp::min(d, max_delay), 1);
+        let max_count_by_delay = max_delay / effective_delay;
+        count = cmp::min(count, max_count_by_delay.try_into().unwrap_or(usize::MAX));
+        Duration::from_secs(effective_delay)
+    });
+    // Tell the user when limitting or delaying
+    if count < desired_count || effective_delay > 0 {
+        let room_clone = room.clone();
+        //tokio::spawn(async move {
+            let delay_note = if count == desired_count {
+                format!("I will spam {count} messages delayed by {effective_delay}s")
+            } else if effective_delay > 0 {
+                format!("Limit notice: I will spam {count} messages delayed by {effective_delay}s")
+            } else {
+                format!("Limit notice: I will spam {count} messages")
+            };
+            let content = RoomMessageEventContent::notice_plain(delay_note);
+            if let Err(e) = room_clone.send(content).await {
+                warn!("Failed to send spam delay note in {}: {}", room_clone.room_id(), e);
+            }
+        //});
+    }
     tokio::spawn(async move {
         for i in 0..count {
+            if let Ok(sleep_duration) = spam_delay {
+                sleep(sleep_duration).await;
+            };
             let spam_select = TEXT_SPAM[i % TEXT_SPAM.len()];
             let msg = if custom_count { format!("{} - {spam_select}", i+1) } else { spam_select.to_string() };
             let content = RoomMessageEventContent::text_plain(msg);
