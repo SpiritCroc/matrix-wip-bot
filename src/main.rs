@@ -76,6 +76,10 @@ async fn main() -> anyhow::Result<()> {
         &device_name,
     ).await?;
 
+    if !bot_client.logged_in() {
+        panic!("Bot not logged in");
+    }
+
     let media_hs = config.get::<String>("media_login.homeserver_url");
     let media_client = if let Ok(media_hs) = media_hs {
         debug!("Found media client config for {media_hs}");
@@ -94,6 +98,9 @@ async fn main() -> anyhow::Result<()> {
             &media_password,
             &media_device_name,
         ).await?;
+        if !media_client.logged_in() {
+            panic!("Media client not logged in");
+        }
         Some(media_client)
     } else {
         None
@@ -123,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
     bot_client.add_event_handler(handle_invites);
 
     // Sync once without message handler to not deal with old messages
+    info!("Starting initial sync...");
     let sync_response = bot_client.sync_once(SyncSettings::default()).await.unwrap();
     info!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
 
