@@ -25,6 +25,7 @@ use tokio::time::{sleep, Duration};
 mod command;
 mod users;
 mod image_generator;
+mod bridge;
 use crate::command::handle_command;
 use crate::users::is_user_trusted;
 

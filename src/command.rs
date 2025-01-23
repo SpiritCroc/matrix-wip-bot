@@ -34,16 +34,20 @@ use crate::{
     users::{is_user_vip, is_user_trusted, is_user_trusted_not_vip},
     image_generator,
     WipContext,
+    bridge::{BridgeStateContent, BridgeProtocol},
 };
 
 mod spam;
 use spam::{TEXT_SPAM, STICKER_SPAM};
 
+const FAKE_BRIDGE_KEY: &str = "de.spiritcroc.wipbot";
+
 const HELP: &str = "- `!help` - Print this help\n\
                     - `!ping` - Pong\n\
                     - `!whoami` - View your permission level\n\
                     - `!sticker [mxc [body]]` - Send a sticker\n\
-                    - `!broken-sticker` - Send a sticker with empty url";
+                    - `!broken-sticker` - Send a sticker with empty url\n\
+                    - `!bridge-id [id]` - Set or clear a `m.bridge` state event with a given bridge_id";
 const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of text messasges\n\
                             - `!stickerspam [count]` - Send lots of stickers\n\
                             - `!image [width [height]]` - Send an image that you have never seen before\n\
@@ -76,6 +80,7 @@ pub async fn handle_command(
         "typing" => handle_typing(args, event, room, context.config).await,
         "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, context.config).await,
+        "bridge-id" => handle_bride_id(args, event, room).await,
         _ => debug!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
 }
@@ -565,6 +570,39 @@ async fn handle_typing(
             warn!("Failed to finalize typing in {}: {}", room.room_id(), e);
         } else {
             debug!("Finished typing after {duration} in {}", room.room_id());
+        }
+    });
+}
+
+async fn handle_bride_id(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+) {
+    let bridge_id = args.next();
+    debug!("Got !bride_id ({}) in {} from {}", bridge_id.clone().unwrap_or_default(), room.room_id(), event.sender);
+    let content = BridgeStateContent {
+        bridgebot: Some(room.own_user_id().into()),
+        creator: Some(room.own_user_id().into()),
+        protocol: bridge_id.map(|id|
+            BridgeProtocol {
+                id: id.to_string(),
+                displayname: id.to_string(),
+            }
+        ),
+    };
+    tokio::spawn(async move {
+        if let Err(e) = room.send_state_event_for_key(FAKE_BRIDGE_KEY, content).await {
+            warn!("Failed to send bridge_id in {}: {}", room.room_id(), e);
+            let content = RoomMessageEventContent::text_plain("Failed to set bridge-id");
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to send bridge_id error message in {}: {}", room.room_id(), e);
+            }
+        } else {
+            let content = RoomMessageEventContent::notice_markdown("Bridge content updated");
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to send bridge_id success message in {}: {}", room.room_id(), e);
+            }
         }
     });
 }
