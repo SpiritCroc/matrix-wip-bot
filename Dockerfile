@@ -1,4 +1,4 @@
-FROM docker.io/rust:1.82.0-bookworm
+FROM docker.io/rust:1.84.1-bookworm
 
 # ImageMagick - from https://github.com/nlfiedler/magick-rust/blob/master/docker/Dockerfile
 # NOTE: once Debian packages imagemagick 7.1.1-26 or later, can switch to that
