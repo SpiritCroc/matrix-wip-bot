@@ -468,7 +468,9 @@ async fn handle_image_spam_with_count(
                 width: claimed_width.try_into().ok(),
                 height: claimed_height.try_into().ok(),
                 size: image_size.try_into().ok(),
-                blurhash: None,
+                // TODO: random blurhash? (random is better for testing than a solid color like the
+                //  generated images) - https://github.com/woltapp/blurhash/blob/master/Algorithm.md
+                blurhash: Some("LEDuYo=b9]tP02xt}?jGEj9]4;of".to_string()),
                 mimetype: Some(mime::IMAGE_PNG.essence_str().to_string()),
                 thumbnail_info: thumbnail_info,
                 thumbnail_source: thumbnail_source,
