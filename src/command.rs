@@ -50,7 +50,7 @@ const HELP: &str = "- `!help` - Print this help\n\
                     - `!bridge-id [id]` - Set or clear a `m.bridge` state event with a given bridge_id";
 const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of text messasges\n\
                             - `!stickerspam [count]` - Send lots of stickers\n\
-                            - `!image [width [height]]` - Send an image that you have never seen before\n\
+                            - `!image [width [height [info_width info_height]]]` - Send an image that you have never seen before\n\
                             - `!imagespam [count [width [height]]]` - Like `!image` but more of that\n\
                             - `!thumb [width [height]]` - Like `!image` but with an added thumbnail\n\
                             - `!thread [count]` - Send lots of text messages in a thread\n\
@@ -387,6 +387,8 @@ async fn handle_image_spam_with_count(
     let count = cmp::min(desired_count, max_spam_count);
     let width = cmp::min(args.next().unwrap_or_default().parse::<usize>().unwrap_or(150), max_size);
     let height = cmp::min(args.next().unwrap_or_default().parse::<usize>().unwrap_or(width), max_size);
+    let claimed_width = args.next().unwrap_or_default().parse::<usize>().unwrap_or(width);
+    let claimed_height = args.next().unwrap_or_default().parse::<usize>().unwrap_or(height);
     let text_override = args.next().map(|t| t.to_string());
     let font_size = (if count == 1 { 42.0 } else { 64.0 }) * ((width as f64)/150.0);
 
@@ -462,8 +464,8 @@ async fn handle_image_spam_with_count(
             let thumbnail_source = thumbnail_uri.clone().map(MediaSource::Plain);
 
             let image_info = assign!(ImageInfo::new(), {
-                width: width.try_into().ok(),
-                height: height.try_into().ok(),
+                width: claimed_width.try_into().ok(),
+                height: claimed_height.try_into().ok(),
                 size: image_size.try_into().ok(),
                 blurhash: None,
                 mimetype: Some(mime::IMAGE_PNG.essence_str().to_string()),
