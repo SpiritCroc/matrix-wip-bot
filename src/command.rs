@@ -26,7 +26,6 @@ use matrix_sdk::{
         relation::InReplyTo,
         sticker::StickerEventContent,
     },
-    attachment::BaseThumbnailInfo,
 };
 use rand;
 
@@ -434,15 +433,17 @@ async fn handle_image_spam_with_count(
                         (None, None)
                     }
                     Ok(thumb_image) => {
-                        let thumbnail_info = BaseThumbnailInfo {
+                        let thumbnail_info = assign!(ThumbnailInfo::new(), {
                             width: thumb_width.try_into().ok(),
                             height: thumb_height.try_into().ok(),
                             size: thumb_image.len().try_into().ok(),
-                        };
+                            mimetype: Some(mime::IMAGE_PNG.to_string()),
+                        });
 
                         match media_client.media().upload(
                             &mime::IMAGE_PNG,
                             thumb_image,
+                            None,
                         ).await {
                             Ok(u) => {
                                 (
@@ -475,7 +476,8 @@ async fn handle_image_spam_with_count(
 
             let image_upload = match media_client.media().upload(
                 &mime::IMAGE_PNG,
-                image
+                image,
+                None,
             ).await {
                 Ok(u) => u,
                 Err(e) => {

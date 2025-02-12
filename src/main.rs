@@ -4,7 +4,7 @@ use url::Url;
 use matrix_sdk::{
     config::SyncSettings,
     event_handler::Ctx,
-    matrix_auth::MatrixSession,
+    authentication::matrix::MatrixSession,
     Client, Room, RoomState,
     ruma::{
         events::room::{
