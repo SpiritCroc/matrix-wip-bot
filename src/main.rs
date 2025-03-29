@@ -13,7 +13,6 @@ use matrix_sdk::{
             },
             member::StrippedRoomMemberEvent,
         },
-        api::client::filter::FilterDefinition,
     },
     RoomMemberships,
 };
@@ -131,17 +130,14 @@ async fn main() -> anyhow::Result<()> {
     // This one is possibly also for old state events handled before
     bot_client.add_event_handler(handle_invites);
 
-    let sync_settings = SyncSettings::default()
-        .filter(FilterDefinition::empty().into());
-
     // Sync once without message handler to not deal with old messages
     info!("Starting initial sync...");
-    let sync_response = bot_client.sync_once(sync_settings.clone()).await.unwrap();
+    let sync_response = bot_client.sync_once(SyncSettings::default()).await.unwrap();
     info!("Initial sync finished with token {}, start listening for events", sync_response.next_batch);
 
     // Actual message handling and sync loop
     bot_client.add_event_handler(handle_message);
-    bot_client.sync(sync_settings.token(sync_response.next_batch)).await?;
+    bot_client.sync(SyncSettings::default().token(sync_response.next_batch)).await?;
 
     Ok(())
 }
