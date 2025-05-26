@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
         &device_name,
     ).await?;
 
-    if !bot_client.logged_in() {
+    if !bot_client.matrix_auth().logged_in() {
         panic!("Bot not logged in");
     }
 
@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
             &media_password,
             &media_device_name,
         ).await?;
-        if !media_client.logged_in() {
+        if !media_client.matrix_auth().logged_in() {
             panic!("Media client not logged in");
         }
         Some(media_client)
