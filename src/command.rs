@@ -125,7 +125,7 @@ async fn handle_spam(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !spam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if room.is_public() {
+    let max_spam_count = if room.is_public().unwrap_or(true) {
         // No spam in public rooms please...
         // But showing a single spam sticker wouldn't hurt?
         handle_sticker_spam(args, event, room, config).await;
@@ -196,7 +196,7 @@ async fn handle_thread_spam(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !thread in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if room.is_public() {
+    let max_spam_count = if room.is_public().unwrap_or(true) {
         // TODO single message fallback
         return;
     } else if vip {
@@ -238,7 +238,7 @@ async fn handle_reply_spam(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !reply in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if room.is_public() {
+    let max_spam_count = if room.is_public().unwrap_or(true) {
         // TODO single reply fallback
         return;
     } else if vip {
@@ -282,7 +282,7 @@ async fn handle_sticker_spam(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !stickerspam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if room.is_public() {
+    let max_spam_count = if room.is_public().unwrap_or(true) {
         1
     } else if vip {
         config.get::<usize>("bot.sticker_spam.vip_limit").unwrap_or(500)
@@ -373,7 +373,7 @@ async fn handle_image_spam_with_count(
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
     debug!("Got !image {desired_count} in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
-    let max_spam_count = if room.is_public() {
+    let max_spam_count = if room.is_public().unwrap_or(true) {
         1
     } else if vip {
         config.get::<usize>("bot.image_spam.vip_limit").unwrap_or(50)
