@@ -9,6 +9,9 @@ use matrix_sdk::{
     Room,
     ruma::assign,
     ruma::events::{
+        AnyTimelineEvent,
+        AnyMessageLikeEvent,
+        MessageLikeEvent,
         room::{
             message::{
                 OriginalSyncRoomMessageEvent,
@@ -24,7 +27,7 @@ use matrix_sdk::{
             ThumbnailInfo,
         },
         relation::InReplyTo,
-        sticker::StickerEventContent,
+        sticker::{StickerEventContent, StickerMediaSource},
     },
 };
 use rand;
@@ -44,6 +47,7 @@ const FAKE_BRIDGE_KEY: &str = "de.spiritcroc.wipbot";
 const HELP: &str = "- `!help` - Print this help\n\
                     - `!ping` - Pong\n\
                     - `!event` - Show event ID of you command message or the message it replies to\n\
+                    - `!mxc` - Show mxc of the attachment you replied to\n\
                     - `!whoami` - View your permission level\n\
                     - `!sticker [mxc [body]]` - Send a sticker\n\
                     - `!broken-sticker` - Send a sticker with empty url\n\
@@ -68,6 +72,7 @@ pub async fn handle_command(
         "help" => handle_help(event, room, context.config).await,
         "ping" => handle_ping(event, room).await,
         "event" => handle_event_id(event, room).await,
+        "mxc" => handle_mxc(event, room).await,
         "id" => handle_event_id(event, room).await,
         "spam" => handle_spam(args, event, room, context.config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, context.config).await,
@@ -133,6 +138,75 @@ async fn handle_event_id(event: OriginalSyncRoomMessageEvent, room: Room) {
     if let Err(e) = room.send(content).await {
         warn!("Failed to send event ID in {}: {}", room.room_id(), e);
     }
+}
+
+async fn handle_mxc(command: OriginalSyncRoomMessageEvent, room: Room) {
+    let event_id = if let Some(Relation::Reply { in_reply_to }) = command.content.relates_to {
+        in_reply_to.event_id
+    } else {
+        debug!("Got !mxc without reply in {} from {}", room.room_id(), command.sender);
+        let content =
+            RoomMessageEventContent::notice_plain("Please reply to an attachmnent message while issuing the !mxc command");
+        if let Err(e) = room.send(content).await {
+            warn!("Failed to send error message in {}: {}", room.room_id(), e);
+        }
+        return;
+    };
+    debug!("Got !mxc in {} from {}", room.room_id(), command.sender);
+    tokio::spawn(async move {
+        let mxc = match room.event(&event_id, None).await {
+            Ok(event) => match event.into_raw().deserialize().map(|event| event.into_full_event(room.room_id().into()))  {
+                Ok(AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::RoomMessage(MessageLikeEvent::Original(message)))) => {
+                    let source = match message.content.msgtype {
+                        MessageType::Audio(content) => Some(content.source),
+                        MessageType::File(content) => Some(content.source),
+                        MessageType::Image(content) => Some(content.source),
+                        MessageType::Video(content) => Some(content.source),
+                        _ => None
+                    };
+                    match source {
+                        Some(MediaSource::Plain(uri)) => Some(uri),
+                        Some(MediaSource::Encrypted(file)) => Some(file.url),
+                        None => None
+                    }
+                }
+                Ok(AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::Sticker(MessageLikeEvent::Original(sticker)))) => {
+                    match sticker.content.source {
+                        StickerMediaSource::Plain(uri) => Some(uri),
+                        StickerMediaSource::Encrypted(file) => Some(file.url),
+                        _ => None
+                    }
+                }
+                _ => {
+                    None
+                }
+            }
+            Err(e) => {
+                warn!("Failed to look up replied-to event {} for mxc in {}: {}", event_id, room.room_id(), e);
+                let content =
+                    RoomMessageEventContent::notice_plain("Failed to look-up replied-to event");
+                if let Err(e) = room.send(content).await {
+                    warn!("Failed to send mxc error message in {}: {}", room.room_id(), e);
+                }
+                return;
+            }
+        };
+        if let Some(mxc) = mxc {
+            let msg_html = format!("<pre><code>{}</code></pre>", mxc);
+            let content = assign!(RoomMessageEventContent::notice_html(event_id.clone(), msg_html), {
+                relates_to: Some(Relation::Reply { in_reply_to: InReplyTo::new(event_id) }),
+            });
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to send event ID in {}: {}", room.room_id(), e);
+            }
+        } else {
+            let content =
+                RoomMessageEventContent::notice_plain("Replied-to message does not appear to be a known attachment type");
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to send mxc warning message in {}: {}", room.room_id(), e);
+            }
+        };
+    });
 }
 
 async fn handle_spam(
