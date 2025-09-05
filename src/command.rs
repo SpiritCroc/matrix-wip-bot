@@ -47,6 +47,7 @@ const FAKE_BRIDGE_KEY: &str = "de.spiritcroc.wipbot";
 const HELP: &str = "- `!help` - Print this help\n\
                     - `!ping` - Pong\n\
                     - `!event` - Show event ID of you command message or the message it replies to\n\
+                    - `!room` - Show current room ID\n\
                     - `!mxc` - Show mxc of the attachment you replied to\n\
                     - `!whoami` - View your permission level\n\
                     - `!sticker [mxc [body]]` - Send a sticker\n\
@@ -72,6 +73,7 @@ pub async fn handle_command(
         "help" => handle_help(event, room, context.config).await,
         "ping" => handle_ping(event, room).await,
         "event" => handle_event_id(event, room).await,
+        "room" => handle_room_id(event, room).await,
         "mxc" => handle_mxc(event, room).await,
         "id" => handle_event_id(event, room).await,
         "spam" => handle_spam(args, event, room, context.config).await,
@@ -137,6 +139,15 @@ async fn handle_event_id(event: OriginalSyncRoomMessageEvent, room: Room) {
     });
     if let Err(e) = room.send(content).await {
         warn!("Failed to send event ID in {}: {}", room.room_id(), e);
+    }
+}
+
+async fn handle_room_id(event: OriginalSyncRoomMessageEvent, room: Room) {
+    debug!("Got !room in {} from {}", room.room_id(), event.sender);
+    let msg_html = format!("<pre><code>{}</code></pre>", room.room_id());
+    let content = RoomMessageEventContent::notice_html(room.room_id(), msg_html);
+    if let Err(e) = room.send(content).await {
+        warn!("Failed to send room ID in {}: {}", room.room_id(), e);
     }
 }
 
