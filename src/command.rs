@@ -43,6 +43,7 @@ const FAKE_BRIDGE_KEY: &str = "de.spiritcroc.wipbot";
 
 const HELP: &str = "- `!help` - Print this help\n\
                     - `!ping` - Pong\n\
+                    - `!event` - Show event ID of you command message or the message it replies to\n\
                     - `!whoami` - View your permission level\n\
                     - `!sticker [mxc [body]]` - Send a sticker\n\
                     - `!broken-sticker` - Send a sticker with empty url\n\
@@ -66,6 +67,8 @@ pub async fn handle_command(
     match cmd.as_str() {
         "help" => handle_help(event, room, context.config).await,
         "ping" => handle_ping(event, room).await,
+        "event" => handle_event_id(event, room).await,
+        "id" => handle_event_id(event, room).await,
         "spam" => handle_spam(args, event, room, context.config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, context.config).await,
         "sticker" => handle_sticker(args, event, room).await,
@@ -113,6 +116,22 @@ async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
     let content = RoomMessageEventContent::notice_html(msg_plain, msg_html);
     if let Err(e) = room.send(content).await {
         warn!("Failed to ping in {}: {}", room.room_id(), e);
+    }
+}
+
+async fn handle_event_id(event: OriginalSyncRoomMessageEvent, room: Room) {
+    debug!("Got !event in {} from {}", room.room_id(), event.sender);
+    let event_id = if let Some(Relation::Reply { in_reply_to }) = event.content.relates_to {
+        in_reply_to.event_id
+    } else {
+        event.event_id
+    };
+    let msg_html = format!("<pre><code>{}</code></pre>", event_id);
+    let content = assign!(RoomMessageEventContent::notice_html(event_id.clone(), msg_html), {
+        relates_to: Some(Relation::Reply { in_reply_to: InReplyTo::new(event_id) }),
+    });
+    if let Err(e) = room.send(content).await {
+        warn!("Failed to send event ID in {}: {}", room.room_id(), e);
     }
 }
 
