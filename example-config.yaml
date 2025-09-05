@@ -35,3 +35,5 @@ bot:
     limit: 30
   typing:
     max_duration: 20
+tts:
+  config_path: "/path/to/en_US-libritts_r-medium.onnx.json"

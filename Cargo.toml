@@ -12,11 +12,16 @@ log = "0.4.28"
 magick_rust = "1.1.0"
 matrix-sdk = { version = "0.14.0", features = ["markdown"] }
 mime = "0.3.17"
+piper-rs = "0.1.9"
 rand = "0.9.2"
 serde = "1.0.219"
 serde_json = "1.0.143"
 tokio = { version = "1.47.1", features = ["rt-multi-thread"] }
 url = "2.5.7"
+# ort-sys needs to be pinned to compile, pulled in from piper-rs
+# https://github.com/pykeio/ort/issues/399
+ort-sys = { version = "=2.0.0-rc.9", default-features = false }
+tempfile = "3.21.0"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ruma_unstable_exhaustive_types)'] }

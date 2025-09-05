@@ -7,6 +7,10 @@ RUN apt-get update \
  && apt-get -y install curl build-essential clang pkg-config libjpeg-turbo-progs libpng-dev \
  && rm -rfv /var/lib/apt/lists/*
 
+# TTS - https://github.com/thewh1teagle/piper-rs/blob/076924bcc5cdc98898dfb083c81bfa46ef498db3/examples/usage.rs
+RUN wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx \
+ && wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json
+
 ENV MAGICK_VERSION 7.1
 
 RUN curl https://imagemagick.org/archive/ImageMagick.tar.gz | tar xz \

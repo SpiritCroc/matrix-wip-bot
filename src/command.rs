@@ -1,6 +1,7 @@
 use std::{
     self, cmp, str::SplitWhitespace,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    path::PathBuf,
 };
 use tokio::time::sleep;
 use config::Config;
@@ -20,6 +21,7 @@ use matrix_sdk::{
                 ReplyWithinThread,
                 Relation,
                 ImageMessageEventContent,
+                AudioMessageEventContent,
                 MessageType,
             },
             ImageInfo,
@@ -31,6 +33,9 @@ use matrix_sdk::{
     },
 };
 use rand;
+
+use piper_rs::synth::PiperSpeechSynthesizer;
+use tempfile::NamedTempFile;
 
 use crate::{
     users::{is_user_vip, is_user_trusted, is_user_trusted_not_vip},
@@ -58,6 +63,8 @@ const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of tex
                             - `!image [width [height [info_width info_height]]]` - Send an image that you have never seen before\n\
                             - `!imagespam [count [width [height]]]` - Like `!image` but more of that\n\
                             - `!thumb [width [height]]` - Like `!image` but with an added thumbnail\n\
+                            - `!tts <text>` - Send audio message for provided text using TTS\n\
+                            - `!audio <text>` - Send audio message for provided text using TTS\n\
                             - `!thread [count]` - Send lots of text messages in a thread\n\
                             - `!reply [count]` - Send lots of text messages as replies\n\
                             - `!typing [seconds]` - Send typing indicator";
@@ -83,6 +90,9 @@ pub async fn handle_command(
         "thumb" => handle_image_spam_with_count(1, args, event, room, context, true).await,
         "thumbnail" => handle_image_spam_with_count(1, args, event, room, context, true).await,
         "imagespam" => handle_image_spam(args, event, room, context).await,
+        "tts" => handle_tts(event, room, context).await,
+        "audio" => handle_tts(event, room, context).await,
+        "voice" => handle_tts(event, room, context).await,
         "thread" => handle_thread_spam(args, event, room, context.config).await,
         "reply" => handle_reply_spam(args, event, room, context).await,
         "replies" => handle_reply_spam(args, event, room, context).await,
@@ -607,6 +617,104 @@ async fn handle_image_spam_with_count(
             }
 
             trace!("Successfully sent image with size {image_size}, mxc {} and thumbnail {:?}", image_upload.content_uri, thumbnail_uri);
+        }
+    });
+}
+
+
+async fn handle_tts(
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    context: WipContext,
+) {
+    let config = context.config;
+    let vip = is_user_vip(&event.sender, config.clone());
+    let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
+    debug!("Got !tts in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    if !vip && !trusted {
+        return;
+    }
+
+    let text = event.content.body().split_once(char::is_whitespace).map(|p| p.1).unwrap_or("Nope").to_string();
+
+    tokio::spawn(async move {
+        let config_path = match config.get::<String>("tts.config_path").map(PathBuf::from) {
+            Ok(path) => path,
+            Err(e) => {
+                error!("No TTS config path provided: {e}");
+                return;
+            }
+        };
+        let model = match piper_rs::from_config_path(config_path.as_path()) {
+            Ok(model) => model,
+            Err(e) => {
+                error!("Failed to TTS: {e}");
+                return;
+            }
+        };
+        let synth = match PiperSpeechSynthesizer::new(model) {
+            Ok(synth) => synth,
+            Err(e) => {
+                error!("Failed to TTS: {e}");
+                return;
+            }
+        };
+
+        // TODO figure out to do completely in memory
+        let file = match NamedTempFile::new() {
+            Ok(file) => file,
+            Err(e) => {
+                error!("Failed to create TTS tempfile: {e}");
+                return;
+            }
+        };
+
+        debug!("TTS initialized");
+
+        if let Err(e) = synth.synthesize_to_file(file.path(), text, None) {
+            error!("Failed to synthesize TTS: {e}");
+            return
+        }
+
+        debug!("TTS generated");
+
+        let wav_content = match std::fs::read(file.path()) {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to read TTS tempfile: {e}");
+                return;
+            }
+        };
+
+        debug!("TTS written");
+
+        let media_client = context.media_client.unwrap_or_else(|| room.client());
+        let upload = match media_client.media().upload(
+            &mime::APPLICATION_OCTET_STREAM,
+            wav_content,
+            None,
+        ).await {
+            Ok(u) => u,
+            Err(e) => {
+                error!("Failed to upload wav: {}", e);
+                return
+            }
+        };
+
+        debug!("TTS uploaded");
+
+        let audio_content = AudioMessageEventContent::plain(
+            "TTS".to_string(),
+            upload.content_uri.into(),
+        );
+
+        let message = RoomMessageEventContent::new(
+            MessageType::Audio(audio_content)
+        );
+
+        if let Err(e) = room.send(message).await {
+            warn!("Failed to send audio in {}: {}", room.room_id(), e);
+            return;
         }
     });
 }

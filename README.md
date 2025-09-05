@@ -27,6 +27,11 @@ or
 podman-compose up
 ```
 
+## TTS
+
+Text-to-speach uses [piper-rs](https://github.com/thewh1teagle/piper-rs/), to get it to work download a model +
+config from [huggingface](https://huggingface.co/rhasspy/piper-voices/tree/main) and point to the config in your bot config.
+
 ## Verbose logging
 
 See options for [env_logger](https://docs.rs/env_logger/latest/env_logger/), e.g. run with environment variable `RUST_LOG=trace`.
