@@ -33,6 +33,7 @@ use crate::users::is_user_trusted;
 struct WipContext {
     config: Config,
     bot_name: String,
+    bot_server: String,
     allowed_pings: Vec<String>,
     launched_ts: u128,
     media_client: Option<Client>,
@@ -83,6 +84,10 @@ async fn main() -> anyhow::Result<()> {
         panic!("Bot not logged in");
     }
 
+    let bot_server = bot_client.server().map(|s| s.to_string()).unwrap_or_else(|| {
+        username.split(":").collect::<Vec<_>>()[1].to_string()
+    });
+
     let media_hs = config.get::<String>("media_login.homeserver_url");
     let media_client = if let Ok(media_hs) = media_hs {
         debug!("Found media client config for {media_hs}");
@@ -120,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
     let wip_context = WipContext {
         config: config.clone(),
         bot_name: bot_name.unwrap_or("WIP-Bot".to_string()),
+        bot_server,
         allowed_pings,
         launched_ts: SystemTime::now()
             .duration_since(UNIX_EPOCH)
