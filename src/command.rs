@@ -879,7 +879,6 @@ async fn handle_invite(
                 }
             }
             Ok(new_room) => {
-                // TODO mention room ID
                 let response = RoomMessageEventContent::notice_markdown(
                     format!(
                         "Invited to [`{}`](https://matrix.to/#/{})",
