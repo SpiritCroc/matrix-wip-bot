@@ -15,6 +15,7 @@ use matrix_sdk::{
         events::{
             AnyTimelineEvent,
             AnyMessageLikeEvent,
+            Mentions,
             MessageLikeEvent,
             room::{
                 message::{
@@ -57,6 +58,7 @@ const FAKE_BRIDGE_KEY: &str = "de.spiritcroc.wipbot";
 
 const HELP: &str = "- `!help` - Print this help\n\
                     - `!ping` - Pong\n\
+                    - `!pingme` - Mentions you intentionally\n\
                     - `!event` - Show event ID of you command message or the message it replies to\n\
                     - `!room` - Show current room ID\n\
                     - `!mxc` - Show mxc of the attachment you replied to\n\
@@ -74,6 +76,7 @@ const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of tex
                             - `!thread [count]` - Send lots of text messages in a thread\n\
                             - `!reply [count]` - Send lots of text messages as replies\n\
                             - `!invite [title]` - Create a new room and invite you to it\n\
+                            - `!pingroom` - Ping the room\n\
                             - `!typing [seconds]` - Send typing indicator";
 
 pub async fn handle_command(
@@ -86,6 +89,8 @@ pub async fn handle_command(
     match cmd.as_str() {
         "help" => handle_help(event, room, context.config).await,
         "ping" => handle_ping(event, room).await,
+        "pingme" => handle_ping_me(event, room).await,
+        "pingroom" => handle_ping_room(event, room).await,
         "event" => handle_event_id(event, room).await,
         "eventid" => handle_event_id(event, room).await,
         "id" => handle_event_id(event, room).await,
@@ -143,6 +148,32 @@ async fn handle_ping(event: OriginalSyncRoomMessageEvent, room: Room) {
     let content = RoomMessageEventContent::notice_html(msg_plain, msg_html);
     if let Err(e) = room.send(content).await {
         warn!("Failed to ping in {}: {}", room.room_id(), e);
+    }
+}
+
+async fn handle_ping_me(event: OriginalSyncRoomMessageEvent, room: Room) {
+    debug!("Got !pingme in {} from {}", room.room_id(), event.sender);
+    let msg_plain = format!("Ping with mention");
+    let msg_html = format!(
+        "<a href='https://matrix.to/#/{}'>{}</a>: Hi there",
+        event.sender,
+        event.sender,
+    );
+    let content = assign!(RoomMessageEventContent::text_html(msg_plain, msg_html), {
+        mentions: Some(Mentions::with_user_ids(vec!(event.sender))),
+    });
+    if let Err(e) = room.send(content).await {
+        warn!("Failed to ping the sender in {}: {}", room.room_id(), e);
+    }
+}
+
+async fn handle_ping_room(event: OriginalSyncRoomMessageEvent, room: Room) {
+    debug!("Got !pingroom in {} from {}", room.room_id(), event.sender);
+    let content = assign!(RoomMessageEventContent::text_plain("I was told to ping @room, everyone listen up!"), {
+        mentions: Some(Mentions::with_room_mention()),
+    });
+    if let Err(e) = room.send(content).await {
+        warn!("Failed to ping the room in {}: {}", room.room_id(), e);
     }
 }
 
