@@ -4,32 +4,38 @@ use std::{
     path::PathBuf,
 };
 use tokio::time::sleep;
+use chrono::Utc;
 use config::Config;
 use log::{trace, debug, warn, error};
 use matrix_sdk::{
     Room,
-    ruma::assign,
-    ruma::events::{
-        AnyTimelineEvent,
-        AnyMessageLikeEvent,
-        MessageLikeEvent,
-        room::{
-            message::{
-                OriginalSyncRoomMessageEvent,
-                RoomMessageEventContent,
-                AddMentions,
-                ReplyWithinThread,
-                Relation,
-                ImageMessageEventContent,
-                AudioMessageEventContent,
-                MessageType,
+    ruma::{
+        assign,
+        api::client::room::create_room,
+        events::{
+            AnyTimelineEvent,
+            AnyMessageLikeEvent,
+            MessageLikeEvent,
+            room::{
+                message::{
+                    OriginalSyncRoomMessageEvent,
+                    RoomMessageEventContent,
+                    AddMentions,
+                    ReplyWithinThread,
+                    Relation,
+                    ImageMessageEventContent,
+                    AudioMessageEventContent,
+                    MessageType,
+                },
+                ImageInfo,
+                MediaSource,
+                ThumbnailInfo,
             },
-            ImageInfo,
-            MediaSource,
-            ThumbnailInfo,
+            relation::InReplyTo,
+            sticker::{StickerEventContent, StickerMediaSource},
         },
-        relation::InReplyTo,
-        sticker::{StickerEventContent, StickerMediaSource},
+        RoomVersionId,
+        serde::Raw,
     },
 };
 use rand;
@@ -67,6 +73,7 @@ const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of tex
                             - `!audio <text>` - Send audio message for provided text using TTS\n\
                             - `!thread [count]` - Send lots of text messages in a thread\n\
                             - `!reply [count]` - Send lots of text messages as replies\n\
+                            - `!invite [title]` - Create a new room and invite you to it\n\
                             - `!typing [seconds]` - Send typing indicator";
 
 pub async fn handle_command(
@@ -102,6 +109,7 @@ pub async fn handle_command(
         "broken-sticker" => handle_sticker_broken(event, room).await,
         "whoami" => handle_whoami(event, room, context.config).await,
         "bridge-id" => handle_bride_id(args, event, room).await,
+        "invite" => handle_invite(args, event, room, context).await,
         _ => debug!("Ignore unknown command \"{}\" by {} in {}", cmd, event.sender, room.room_id()),
     }
 }
@@ -760,7 +768,7 @@ async fn handle_typing(
     let duration = cmp::min(desired_duration.unwrap_or(5), max_duration);
 
     // Need to refresh the typing every once in a while:
-    // https://spec.matrix.org/v1.11/client-server-api/#put_matrixclientv3roomsroomidtypinguserid
+    // https://spec.matrix.org/v1.11/client-server-api/#put_matrixclientv3roomsroomidtypinguseridclient
     tokio::spawn(async move {
         let typing_period = 5;
         let mut remaining = duration;
@@ -822,6 +830,77 @@ async fn handle_bride_id(
             let content = RoomMessageEventContent::notice_markdown("Bridge content updated");
             if let Err(e) = room.send(content).await {
                 warn!("Failed to send bridge_id success message in {}: {}", room.room_id(), e);
+            }
+        }
+    });
+}
+
+async fn handle_invite(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    context: WipContext,
+) {
+    let trusted = is_user_trusted(&event.sender, context.config.clone());
+    if !trusted {
+        return;
+    }
+
+    debug!("Got !invite in {} from {}", room.room_id(), event.sender);
+
+    let title = args.next()
+        .map(|t| t.to_string())
+        .unwrap_or(
+            format!(
+                "New {} room {}",
+                context.bot_name,
+                Utc::now()
+            ).to_string()
+        );
+
+    tokio::spawn(async move {
+        let client = room.client();
+        let content = assign!(create_room::v3::CreationContent::new(), {
+            additional_creators: vec!(event.sender.clone()),
+        });
+        let raw_content = Raw::new(&content).ok();
+        let request = assign!(create_room::v3::Request::new(), {
+            creation_content: raw_content,
+            invite: vec!(event.sender),
+            name: Some(title),
+            room_version: Some(RoomVersionId::V12),
+        });
+        match client.create_room(request).await {
+            Err(e) => {
+                warn!("Failed to create room: {}", e);
+                let response = RoomMessageEventContent::text_plain("Failed");
+                if let Err(e) = room.send(response).await {
+                    warn!("Failed to send room creation failure response message in {}: {}", room.room_id(), e);
+                }
+            }
+            Ok(new_room) => {
+                // TODO mention room ID
+                let response = RoomMessageEventContent::notice_markdown(
+                    format!(
+                        "Invited to [`{}`](https://matrix.to/#/{})",
+                        new_room.room_id(),
+                        new_room.room_id(),
+                    )
+                );
+                if let Err(e) = room.send(response).await {
+                    warn!("Failed to send room creation success response message in {}: {}", room.room_id(), e);
+                }
+                let welcome = RoomMessageEventContent::notice_markdown(
+                    format!(
+                        "Invited from [`{}`](https://matrix.to/#/{}/{})",
+                        room.room_id(),
+                        room.room_id(),
+                        event.event_id
+                    )
+                );
+                if let Err(e) = new_room.send(welcome).await {
+                    warn!("Failed to send room creation welcome message message in {}: {}", new_room.room_id(), e);
+                }
             }
         }
     });

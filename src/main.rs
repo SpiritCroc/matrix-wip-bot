@@ -32,6 +32,7 @@ use crate::users::is_user_trusted;
 #[derive(Clone)]
 struct WipContext {
     config: Config,
+    bot_name: String,
     allowed_pings: Vec<String>,
     launched_ts: u128,
     media_client: Option<Client>,
@@ -56,7 +57,8 @@ async fn main() -> anyhow::Result<()> {
     let db_path = data_dir.join("db");
     let session_path = data_dir.join("session");
 
-    let allowed_pings = config.get::<String>("bot.plaintext_ping").map(|name|
+    let bot_name = config.get::<String>("bot.plaintext_ping").ok();
+    let allowed_pings = bot_name.clone().map(|name|
         vec![
             name.clone(),
             format!("{name}:")
@@ -117,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
 
     let wip_context = WipContext {
         config: config.clone(),
+        bot_name: bot_name.unwrap_or("WIP-Bot".to_string()),
         allowed_pings,
         launched_ts: SystemTime::now()
             .duration_since(UNIX_EPOCH)
