@@ -69,6 +69,7 @@ const HELP: &str = "- `!help` - Print this help\n\
 const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of text messasges\n\
                             - `!stickerspam [count]` - Send lots of stickers\n\
                             - `!image [width [height [info_width info_height]]]` - Send an image that you have never seen before\n\
+                            - `!imagemxc [width [height [info_width info_height]]]` - Like `!image` but send the mxc as notice only\n\
                             - `!imagespam [count [width [height]]]` - Like `!image` but more of that\n\
                             - `!thumb [width [height]]` - Like `!image` but with an added thumbnail\n\
                             - `!tts <text>` - Send audio message for provided text using TTS\n\
@@ -100,9 +101,10 @@ pub async fn handle_command(
         "spam" => handle_spam(args, event, room, context.config).await,
         "stickerspam" => handle_sticker_spam(args, event, room, context.config).await,
         "sticker" => handle_sticker(args, event, room).await,
-        "image" => handle_image_spam_with_count(1, args, event, room, context, false).await,
-        "thumb" => handle_image_spam_with_count(1, args, event, room, context, true).await,
-        "thumbnail" => handle_image_spam_with_count(1, args, event, room, context, true).await,
+        "image" => handle_image_spam_with_count(1, args, event, room, context, false, false).await,
+        "imagemxc" => handle_image_spam_with_count(1, args, event, room, context, false, true).await,
+        "thumb" => handle_image_spam_with_count(1, args, event, room, context, true, false).await,
+        "thumbnail" => handle_image_spam_with_count(1, args, event, room, context, true, false).await,
         "imagespam" => handle_image_spam(args, event, room, context).await,
         "tts" => handle_tts(event, room, context).await,
         "audio" => handle_tts(event, room, context).await,
@@ -255,7 +257,7 @@ async fn handle_mxc(command: OriginalSyncRoomMessageEvent, room: Room) {
         };
         if let Some(mxc) = mxc {
             let msg_html = format!("<pre><code>{}</code></pre>", mxc);
-            let content = assign!(RoomMessageEventContent::notice_html(event_id.clone(), msg_html), {
+            let content = assign!(RoomMessageEventContent::notice_html(mxc, msg_html), {
                 relates_to: Some(Relation::Reply { in_reply_to: InReplyTo::new(event_id) }),
             });
             if let Err(e) = room.send(content).await {
@@ -513,7 +515,7 @@ async fn handle_image_spam(
     context: WipContext,
 ) {
     let desired_count = args.next().unwrap_or_default().parse::<usize>().unwrap_or(3);
-    handle_image_spam_with_count(desired_count, args, event, room, context, false).await;
+    handle_image_spam_with_count(desired_count, args, event, room, context, false, false).await;
 }
 
 async fn handle_image_spam_with_count(
@@ -523,11 +525,12 @@ async fn handle_image_spam_with_count(
     room: Room,
     context: WipContext,
     with_thumbnail: bool,
+    only_notice: bool,
 ) {
     let config = context.config;
     let vip = is_user_vip(&event.sender, config.clone());
     let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
-    debug!("Got !image {desired_count} in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    debug!("Got !image {desired_count} in {} from {}, vip={vip}, trusted={trusted}, thumb={with_thumbnail}, notice={only_notice}", room.room_id(), event.sender);
     let max_spam_count = if room.is_public().unwrap_or(true) {
         1
     } else if vip {
@@ -643,14 +646,19 @@ async fn handle_image_spam_with_count(
                 }
             };
 
-            let image_content = ImageMessageEventContent::plain(
-                format!("{i}.png"),
-                image_upload.content_uri.clone(),
-            ).info(Some(Box::new(image_info)));
+            let message = if only_notice {
+                let msg_html = format!("<pre><code>{}</code></pre>", image_upload.content_uri);
+                RoomMessageEventContent::notice_html(image_upload.content_uri.clone(), msg_html)
+            } else {
+                let image_content = ImageMessageEventContent::plain(
+                    format!("{i}.png"),
+                    image_upload.content_uri.clone(),
+                ).info(Some(Box::new(image_info)));
 
-            let message = RoomMessageEventContent::new(
-                MessageType::Image(image_content)
-            );
+                RoomMessageEventContent::new(
+                    MessageType::Image(image_content)
+                )
+            };
 
             if let Err(e) = room.send(message).await {
                 warn!("Failed to send image in {}: {}", room.room_id(), e);
