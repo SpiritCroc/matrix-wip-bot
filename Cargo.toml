@@ -5,16 +5,16 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.100"
-config = "0.15.16"
+config = "0.15.18"
 dirs = "6.0.0"
 env_logger = "0.11.8"
 log = "0.4.28"
-magick_rust = "1.1.0"
+magick_rust = "2.0.0"
 matrix-sdk = { version = "0.14.0", features = ["markdown"] }
 mime = "0.3.17"
 piper-rs = "0.1.9"
 rand = "0.9.2"
-serde = "1.0.226"
+serde = "1.0.228"
 serde_json = "1.0.145"
 tokio = { version = "1.47.1", features = ["rt-multi-thread"] }
 url = "2.5.7"
