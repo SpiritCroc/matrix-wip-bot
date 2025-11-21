@@ -866,7 +866,7 @@ async fn handle_bride_id(
                 warn!("Failed to send bridge_id error message in {}: {}", room.room_id(), e);
             }
         } else {
-            let content = RoomMessageEventContent::notice_markdown("Bridge content updated");
+            let content = RoomMessageEventContent::notice_markdown("Bridge content updated by bot");
             if let Err(e) = room.send(content).await {
                 warn!("Failed to send bridge_id success message in {}: {}", room.room_id(), e);
             }
