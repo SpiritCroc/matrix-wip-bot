@@ -32,7 +32,8 @@ use matrix_sdk::{
                 MediaSource,
                 ThumbnailInfo,
             },
-            relation::InReplyTo,
+            reaction::ReactionEventContent,
+            relation::{InReplyTo, Annotation},
             sticker::{StickerEventContent, StickerMediaSource},
         },
         RoomVersionId,
@@ -71,6 +72,7 @@ const TRUSTED_HELP: &str = "- `!spam [count [delay_seconds]]` - Send lots of tex
                             - `!image [width [height [info_width info_height]]]` - Send an image that you have never seen before\n\
                             - `!imagemxc [width [height [info_width info_height]]]` - Like `!image` but send the mxc as notice only\n\
                             - `!imagespam [count [width [height]]]` - Like `!image` but more of that\n\
+                            - `!reactionspam [count]` - Spam (text) reactions\n\
                             - `!thumb [width [height]]` - Like `!image` but with an added thumbnail\n\
                             - `!tts <text>` - Send audio message for provided text using TTS\n\
                             - `!audio <text>` - Send audio message for provided text using TTS\n\
@@ -106,6 +108,7 @@ pub async fn handle_command(
         "thumb" => handle_image_spam_with_count(1, args, event, room, context, true, false).await,
         "thumbnail" => handle_image_spam_with_count(1, args, event, room, context, true, false).await,
         "imagespam" => handle_image_spam(args, event, room, context).await,
+        "reactionspam" => handle_reaction_spam(args, event, room, context.config).await,
         "tts" => handle_tts(event, room, context).await,
         "audio" => handle_tts(event, room, context).await,
         "voice" => handle_tts(event, room, context).await,
@@ -666,6 +669,47 @@ async fn handle_image_spam_with_count(
             }
 
             trace!("Successfully sent image with size {image_size}, mxc {} and thumbnail {:?}", image_upload.content_uri, thumbnail_uri);
+        }
+    });
+}
+
+async fn handle_reaction_spam(
+    mut args: SplitWhitespace<'_>,
+    event: OriginalSyncRoomMessageEvent,
+    room: Room,
+    config: Config
+) {
+    let vip = is_user_vip(&event.sender, config.clone());
+    let trusted = is_user_trusted_not_vip(&event.sender, config.clone());
+    debug!("Got !reaction_spam in {} from {}, vip={vip}, trusted={trusted}", room.room_id(), event.sender);
+    let max_spam_count = if room.is_public().unwrap_or(true) {
+        1
+    } else if vip {
+        config.get::<usize>("bot.sticker_spam.vip_limit").unwrap_or(500)
+    } else if trusted {
+        config.get::<usize>("bot.sticker_spam.trusted_limit").unwrap_or(100)
+    } else {
+        1
+    };
+    let desired_count = args.next().unwrap_or_default().parse::<usize>();
+    let count = cmp::min(desired_count.unwrap_or(STICKER_SPAM.len()), max_spam_count);
+    tokio::spawn(async move {
+        for i in 0..count {
+            let reaction = if count == 1 {
+                "🐢".to_string()
+            } else {
+                (i+1).to_string()
+            };
+            let content = ReactionEventContent::new(
+                Annotation::new(
+                    event.event_id.clone(),
+                    reaction,
+                )
+            );
+            if let Err(e) = room.send(content).await {
+                warn!("Failed to reactionspam in {}: {}", room.room_id(), e);
+                return
+            }
         }
     });
 }
